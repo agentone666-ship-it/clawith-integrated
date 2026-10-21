@@ -5,6 +5,8 @@ All integration writes, including native Agent creation commits, are rolled back
 The provider is mocked; these tests do not claim live-model business acceptance.
 """
 
+import asyncio
+import json
 import os
 import uuid
 from types import SimpleNamespace
@@ -115,6 +117,17 @@ def test_talk_input_limit(length):
         assert len(Talk(revision=1, content="中" * length).content) == length
 
 
+@pytest.mark.parametrize(("raw", "expected"), [
+    (None, ""), ("直接回复客户", "直接回复客户"),
+    (json.dumps({"summary": "直接回复客户", "verification": {"code": "internal"}, "artifact_refs": []}), "直接回复客户"),
+    (json.dumps({"summary": '{"customer":"demo"}'}), '{"customer":"demo"}'),
+    (json.dumps({"verification": {"code": "internal"}}), ""),
+    (json.dumps({"summary": {"unexpected": "object"}}), ""), ("[]", ""),
+])
+def test_interview_delivery_hides_internal_envelope_and_preserves_business_content(raw, expected):
+    assert interviews._delivery_summary(raw) == expected
+
+
 @pytest_asyncio.fixture
 async def env(monkeypatch):
     url = os.environ.get("RECRUITMENT_TEST_DATABASE_URL")
@@ -213,9 +226,12 @@ async def test_catalog_and_save_reject_cross_tenant_or_disabled_resources(env):
 async def test_hr_generates_resume_and_does_not_save_invalid_or_stale_output(env, monkeypatch):
     row = await create_draft(env)
     captured = []
+    configured_model = SimpleNamespace(id=uuid.uuid4(), request_timeout=120, max_output_tokens=16384)
     async def model(*args, **kwargs):
-        return SimpleNamespace(id=uuid.uuid4())
+        return configured_model
     async def complete(model, messages, **kwargs):
+        assert model is configured_model
+        assert kwargs == {"stream_response": True}  # Keep model limits; aggregate structured streaming privately.
         captured.append(messages)
         return SimpleNamespace(content=HRReply(reply="我为你整理了研究助理简历。", resume=Resume.model_validate(resume_payload())).model_dump_json(),
                                tool_calls=(), retry_instruction=None, finish_reason="stop")
@@ -234,6 +250,42 @@ async def test_hr_generates_resume_and_does_not_save_invalid_or_stale_output(env
     result = await env.client.post(f"/api/recruitment/{row['id']}/talk", json={"revision": row["revision"], "content": "调整", "model_id": str(uuid.uuid4())})
     assert result.status_code == 502
     assert (await env.client.get(f"/api/recruitment/{row['id']}")).json()["revision"] == row["revision"]
+
+
+@pytest.mark.asyncio
+async def test_hr_timeout_cancels_completion_and_can_retry_the_same_revision(env, monkeypatch):
+    row = await create_draft(env)
+    stopped = asyncio.Event()
+
+    async def model(*args, **kwargs):
+        return SimpleNamespace(id=uuid.uuid4())
+
+    async def slow_completion(*args, **kwargs):
+        try:
+            await asyncio.sleep(60)
+        finally:
+            stopped.set()
+
+    monkeypatch.setattr(hr, "load_active_model", model)
+    monkeypatch.setattr(hr, "complete_llm_once", slow_completion)
+    monkeypatch.setattr(hr, "HR_COMPLETION_TIMEOUT_SECONDS", 0.01)
+    body = {"revision": row["revision"], "content": "根据售后规则生成客服简历", "model_id": str(uuid.uuid4())}
+    result = await env.client.post(f"/api/recruitment/{row['id']}/talk", json=body)
+    assert result.status_code == 504
+    assert stopped.is_set()
+    saved = (await env.client.get(f"/api/recruitment/{row['id']}")).json()
+    assert saved["revision"] == row["revision"] and saved["messages"] == row["messages"]
+    assert saved["resume"] is None
+
+    async def completion(*args, **kwargs):
+        return SimpleNamespace(content=HRReply(reply="简历已生成", resume=Resume.model_validate(resume_payload())).model_dump_json(),
+                               tool_calls=(), retry_instruction=None, finish_reason="stop")
+
+    monkeypatch.setattr(hr, "complete_llm_once", completion)
+    result = await env.client.post(f"/api/recruitment/{row['id']}/talk", json=body)
+    assert result.status_code == 200
+    assert result.json()["revision"] == row["revision"] + 1
+    assert len(result.json()["messages"]) == len(row["messages"]) + 2
 
 
 @pytest.mark.asyncio
@@ -293,9 +345,19 @@ async def test_real_candidate_and_chat_intake_then_versioned_review_and_hire(env
     assert result.status_code == 200 and result.json()["status"] == "queued", result.text
     premature = await env.client.post(f"/api/recruitment/{row['id']}/interviews/{request_id}/review", json={"revision": row["revision"], "decision": "pass"})
     assert premature.status_code == 409
+    delivery_text = {"value": "可核实的交付"}
     async def completed(*args):
-        return SimpleNamespace(execution_status="completed")
+        return SimpleNamespace(execution_status="completed", result_summary=json.dumps({
+            "summary": delivery_text["value"], "verification": {"code": "internal"}, "artifact_refs": [],
+        }), last_error=None, waiting_reason=None)
     monkeypatch.setattr(interviews, "read_state", completed)
+    delivered = await env.client.get(f"/api/recruitment/{row['id']}/interviews/{request_id}")
+    assert delivered.status_code == 200 and delivered.json()["summary"] == "可核实的交付"
+    for length in (11999, 12000, 12001):
+        delivery_text["value"] = "交" * length
+        delivered = await env.client.get(f"/api/recruitment/{row['id']}/interviews/{request_id}")
+        assert len(delivered.json()["summary"]) == min(length, 12000)
+        assert delivered.json()["truncated"] is (length > 12000)
     failed = await env.client.post(f"/api/recruitment/{row['id']}/interviews/{request_id}/review", json={
         "revision": row["revision"], "decision": "fail", "feedback": "需要补充来源",
     })

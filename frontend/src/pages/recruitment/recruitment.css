@@ -86,7 +86,8 @@
 .recruit-notice { background: var(--warning-subtle); color: var(--text-secondary); border: 1px solid var(--border-default); }
 .recruit-notice p { font-size: 11px; }
 .recruit-notice .btn, .recruit-error .btn { margin-left: auto; flex-shrink: 0; }
-.recruit-error { background: var(--error-subtle); color: var(--error); }
+.recruit-error { background: var(--error-subtle); color: var(--error); flex-wrap: wrap; }
+.recruit-error > span { flex: 1 1 260px; }
 .recruit-subtitle { margin-top: 25px; }
 .recruit-task-list { display: flex; flex-direction: column; }
 .recruit-task { display: flex; align-items: flex-start; gap: 11px; padding: 15px 0; border-bottom: 1px solid var(--border-subtle); }

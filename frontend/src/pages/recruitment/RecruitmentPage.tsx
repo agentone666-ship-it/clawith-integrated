@@ -13,7 +13,9 @@ import type { Dossier, InterviewTask, Model, Resume } from './types';
 import './recruitment.css';
 
 const WELCOME = '你好，我是你的招聘 HR。你想找一位什么样的数字员工？告诉我希望他帮你完成的工作，我来梳理岗位、匹配能力，再安排面试。';
+const REVIEW_REQUEST = '请根据刚才保存的不通过面评调整员工简历，说明调整了什么。保留已认可的能力，准备复试。';
 const EXAMPLES = [
+    ['售后客服', '我想招聘一位售后客服，根据售后规则起草退换货、物流催单和商品故障回复，投诉转人工；不能擅自退款或承诺赔偿。'],
     ['销售助理', '我想招一个销售助理，帮我整理销售数据、发现异常，再给我一份简洁的日报。'],
     ['内容运营', '我需要一个内容运营，帮我把产品资料整理成公众号文章，发布前先交给我审核。'],
     ['研究助理', '我想招一个研究助理，根据我提供的资料提炼结论，并保留每条结论的来源。'],
@@ -31,6 +33,7 @@ export function RecruitmentPage() {
     const [modelId, setModelId] = useState('');
     const [busy, setBusy] = useState('');
     const [error, setError] = useState('');
+    const [reviewRetryFor, setReviewRetryFor] = useState<string | null>(null);
     const [rightTab, setRightTab] = useState<'resume' | 'interview'>('resume');
     const [selectedInterview, setSelectedInterview] = useState<string | null>(null);
     const chatEnd = useRef<HTMLDivElement>(null);
@@ -86,12 +89,12 @@ export function RecruitmentPage() {
 
     async function handleSend(text = composer) {
         if (!text.trim() || !effectiveModel) return;
-        const result = await perform('HR 正在梳理岗位、匹配能力…', async () => {
+        const result = await perform('HR 正在梳理岗位、匹配能力，生成简历可能需要 1–2 分钟…', async () => {
             const current = row || await recruitmentApi.create();
             if (!row) accept(current);
             return recruitmentApi.talk(current, text.trim(), effectiveModel);
         });
-        if (result) setComposer('');
+        if (result) { setComposer(current => current.trim() === text.trim() ? '' : current); setReviewRetryFor(null); }
     }
 
     async function handleAssemble() {
@@ -102,7 +105,7 @@ export function RecruitmentPage() {
             void queryClient.invalidateQueries({ queryKey: ['agents'] });
             return recruitmentApi.get(row.id);
         });
-        if (result) setRightTab('interview');
+        if (result) { setSelectedInterview(null); setRightTab('interview'); }
     }
 
     async function handleStart(task: InterviewTask) {
@@ -114,21 +117,24 @@ export function RecruitmentPage() {
 
     async function handleReview(id: string, decision: 'pass' | 'fail', feedback: string) {
         if (!row) return;
-        await perform(decision === 'fail' ? 'HR 正在根据面评调整简历…' : '正在保存面评…', async () => {
+        await perform(decision === 'fail' ? 'HR 正在根据面评调整简历，可能需要 1–2 分钟…' : '正在保存面评…', async () => {
             const reviewed = await recruitmentApi.review(row, id, decision, feedback);
             accept(reviewed);
             if (decision === 'pass') return reviewed;
             setRightTab('resume');
             try {
-                return await recruitmentApi.talk(reviewed, '请根据刚才保存的不通过面评调整员工简历，说明调整了什么。保留已认可的能力，准备复试。', effectiveModel);
+                const adjusted = await recruitmentApi.talk(reviewed, REVIEW_REQUEST, effectiveModel);
+                setReviewRetryFor(null);
+                return adjusted;
             } catch (err) {
+                setReviewRetryFor(reviewed.id);
                 throw Object.assign(new Error(`面评已保存，HR 暂未完成调整：${err instanceof Error ? err.message : '请稍后重试'}`), { cause: err });
             }
         });
     }
 
     function handleNew() {
-        navigate('/recruitment'); setComposer(''); setError(''); setSelectedInterview(null); setRightTab('resume');
+        navigate('/recruitment'); setComposer(''); setError(''); setReviewRetryFor(null); setSelectedInterview(null); setRightTab('resume');
     }
 
     return <div className="recruitment-page">
@@ -136,7 +142,7 @@ export function RecruitmentPage() {
             <h1 className="page-title">招聘数字员工</h1><p>和 HR 聊聊，找到能把工作做好的新同事。</p></div>
             <div className="recruit-header-actions">
                 <select aria-label="招聘记录" className="form-input" value={dossierId || ''} disabled={!!busy || !!drafts.error} onChange={e => {
-                    setError(''); setComposer(''); setSelectedInterview(null); setRightTab('resume');
+                    setError(''); setComposer(''); setReviewRetryFor(null); setSelectedInterview(null); setRightTab('resume');
                     if (e.target.value) navigate(`/recruitment/${e.target.value}`); else handleNew();
                 }}><option value="">{drafts.error ? '招聘记录加载失败' : '新的招聘'}</option>{drafts.data?.map(d => <option value={d.id} key={d.id}>{d.resume?.name || d.messages.find(m => m.role === 'user')?.content.slice(0, 20) || '招聘进行中'}{d.hired_at ? ' · 已录用' : ''}</option>)}</select>
                 <button className="btn btn-secondary" onClick={handleNew} disabled={!!busy}><IconPlus size={15} />新招聘</button>
@@ -151,6 +157,8 @@ export function RecruitmentPage() {
         </nav>
         {(error || dossierQuery.error || modelQuery.error || candidateError) && <div className="recruit-error" role="alert">
             <span>{error || dossierQuery.error?.message || modelQuery.error?.message || candidateError?.message}</span>
+            {error && reviewRetryFor === dossierId && <button className="btn btn-secondary" disabled={!!busy || !effectiveModel || !row}
+                onClick={() => void handleSend(REVIEW_REQUEST)}>重试 HR 调整</button>}
             {dossierId && <button className="btn btn-secondary" disabled={!!busy} onClick={() => { setError(''); void dossierQuery.refetch(); if (row?.candidate_id) void candidate.refetch(); }}>刷新记录</button>}
         </div>}
         {!modelQuery.isPending && !modelQuery.error && models.length === 0 && <div className="recruit-notice" role="status">
@@ -188,7 +196,8 @@ export function RecruitmentPage() {
                         onToggle={(resume: Resume) => { if (row) void perform('正在更新简历…', () => recruitmentApi.saveResume(row, resume)); }}
                         onAssemble={() => void handleAssemble()} onInterview={() => setRightTab('interview')}
                         onAdd={() => { setComposer('我还希望这位员工能够：'); input.current?.focus(); }} />
-                        : <InterviewPanel row={row} busy={!!busy} preparing={preparing} selectedId={selectedInterview} onSelect={setSelectedInterview}
+                        : <InterviewPanel row={row} busy={!!busy} preparing={preparing}
+                            unavailable={candidate.data?.status === 'error' || candidate.data?.status === 'stopped'} selectedId={selectedInterview} onSelect={setSelectedInterview}
                             onStart={task => void handleStart(task)} onReview={(id, decision, feedback) => void handleReview(id, decision, feedback)}
                             onResume={() => setRightTab('resume')} onContinue={(id, content) => void perform('正在补充面试资料…', async () => {
                                 const next = await recruitmentApi.continue(row, id, content);

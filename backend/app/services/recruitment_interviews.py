@@ -1,5 +1,6 @@
 """Real interview execution through native chat intake; human review is a separate fact."""
 
+import json
 import uuid
 from datetime import UTC, datetime
 
@@ -21,6 +22,20 @@ from app.services.participant_identity import get_or_create_user_participant
 from app.services.quota_guard import AgentExpired, QuotaExceeded, check_agent_expired, check_conversation_quota
 
 TERMINAL = {"completed", "failed", "cancelled"}
+
+
+def _delivery_summary(raw: str | None) -> str:
+    """Project the native finalizer envelope into business-facing delivery text."""
+    if not raw:
+        return ""
+    try:
+        envelope = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw  # RunView also supports plain-text summaries.
+    if isinstance(envelope, dict) and isinstance(envelope.get("summary"), str):
+        return envelope["summary"]
+    # Unknown structured summaries stay in the native workbench, not the business UI.
+    return ""
 
 
 async def check_quota(user, agent_id=None):
@@ -113,14 +128,15 @@ async def detail(db, user, dossier_id, interview_id):
         AgentToolExecution.tenant_id == row.tenant_id,
         AgentToolExecution.run_id == uuid.UUID(item["run_id"]),
     ).order_by(AgentToolExecution.started_at.desc(), AgentToolExecution.id.desc()).limit(41))).scalars().all())
+    summary = _delivery_summary(view.result_summary)
     return {
-        "status": view.execution_status, "summary": (view.result_summary or "")[:12000],
+        "status": view.execution_status, "summary": summary[:12000],
         "error": (view.last_error or "")[:3000], "waiting_reason": (view.waiting_reason or "")[:3000],
         "can_continue": view.execution_status == "waiting_user" and bool(view.waiting_correlation_id),
         "messages": [{"role": m.role, "content": m.content[:4000]} for m in reversed(messages[:60])],
         "tools": [{"id": str(t.id), "name": t.tool_name, "status": t.status,
                    "summary": (t.result_summary or "")[:2000]} for t in reversed(tools[:40])],
-        "truncated": len(messages) > 60 or len(tools) > 40 or any(len(m.content) > 4000 for m in messages[:60]),
+        "truncated": len(summary) > 12000 or len(messages) > 60 or len(tools) > 40 or any(len(m.content) > 4000 for m in messages[:60]),
     }
 
 

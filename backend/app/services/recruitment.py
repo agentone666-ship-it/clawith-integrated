@@ -2,11 +2,13 @@
 
 import asyncio
 import json
+import time
 import uuid
 from datetime import UTC, datetime
 
 import httpx
 from fastapi import HTTPException
+from loguru import logger
 from pydantic import ValidationError
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +28,7 @@ from app.services.llm.single_step import complete_llm_once
 from app.services.quota_guard import QuotaExceeded, check_conversation_quota
 
 WELCOME = "你好，我是你的招聘 HR。你想找一位什么样的数字员工？告诉我希望他帮你完成的工作，我来梳理岗位、匹配能力，再安排面试。"
+HR_COMPLETION_TIMEOUT_SECONDS = 180
 
 
 def require_tenant(user: User) -> uuid.UUID:
@@ -151,10 +154,18 @@ async def talk(db: AsyncSession, user: User, dossier_id: uuid.UUID, data: Talk):
         "你是 Clawith 的数字员工招聘 HR。用用户的语言自然聊天，每次至多问两个关键问题，"
         "不要让业务用户填写表单、写 Prompt 或技术测试用例。先了解工作目标、资料来源和交付要求，"
         "信息足够时生成候选简历；不够时 resume=null，继续简短追问。"
+        "用户已明确资料和工作方式时直接生成，不重复追问已回答的信息。"
+        "回复只说明关键结论和下一步，不重复整份简历；简历各项简洁，规则和边界保留完整含义，"
+        "避免在多个字段重复同一段说明，面试任务优先使用用户已提供的样例。"
         "简历能力必须是用户看得懂的工作能力。根据 available_market 选择真实 skill_ids/tool_ids，"
+        "只有明确匹配工作需要才绑定市场能力，不为凑配置强行选通用写作或复杂任务编排技能。"
+        "简单的资料分析、客服短回复可以仅用岗位指令。用户要求当前会话交付时，明确写出直接回复、"
+        "只补问缺失信息、不生成额外文件或创建Focus、计划，不调用无关工具。"
         "不允许编造 ID、接入状态、执行结果或权限。没有对应工具的需求写入 needs_setup，"
         "纯知识或工作方法可以只用岗位指令，但不得把需要外部系统的动作说成已具备。"
         "推荐 2-3 项可实际试做的面试任务，包含明确输入或要求用户提供资料，不编造真实业务数据。"
+        "生成简历后请用户先确认简历，再安排候选员工试做；你负责招聘沟通，不直接承接员工工作，"
+        "不得让用户在 HR 对话里要求你执行面试，也不宣称候选员工已经执行。"
         "工作安排、记忆、通知是岗位约定；当前只支持人工试做和本人使用，"
         "定时、事件、消息接入、共享记忆、组织权限需通过平台设置配置，必须明确写出待配置事项。"
         "默认任职范围 personal，只有用户明确要求才推荐其他 scope。外发、删除和业务写入先征求确认。"
@@ -164,19 +175,33 @@ async def talk(db: AsyncSession, user: User, dossier_id: uuid.UUID, data: Talk):
         "只返回符合以下 Schema 的 JSON，不要代码围栏："
         + json.dumps(HRReply.model_json_schema(), ensure_ascii=False)
     )), LLMMessage(role="user", content=json.dumps(context, ensure_ascii=False))]
+    started = time.monotonic()
+    logger.info("HR completion started dossier={} model={} revision={}", row.id, model.id, row.revision)
     try:
-        async with asyncio.timeout(90):
-            result = await complete_llm_once(model, messages, max_output_tokens=6500)
-    except (TimeoutError, LLMError, httpx.HTTPError) as exc:
+        # The model owns provider timeout/output limits; HR bounds the complete operation.
+        async with asyncio.timeout(HR_COMPLETION_TIMEOUT_SECONDS):
+            result = await complete_llm_once(model, messages, stream_response=True)
+    except (TimeoutError, httpx.TimeoutException) as exc:
+        logger.warning("HR completion timed out dossier={} model={} elapsed={:.1f}s error_type={}",
+                       row.id, model.id, time.monotonic() - started, type(exc).__name__)
+        raise HTTPException(504, "HR 响应超时，本轮内容尚未保存。可以重试，或切换 HR 模型后再发送") from exc
+    except (LLMError, httpx.HTTPError) as exc:
+        logger.warning("HR completion failed dossier={} model={} error_type={}", row.id, model.id, type(exc).__name__)
         raise HTTPException(502, "HR 回复失败，本轮内容尚未保存，请重试") from exc
+    logger.info("HR completion returned dossier={} model={} elapsed={:.1f}s finish_reason={}",
+                row.id, model.id, time.monotonic() - started, result.finish_reason)
     content = (result.content or "").strip()
     if content.startswith("```") and content.endswith("```"):
         content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
     if len(content.encode()) > 70000 or result.tool_calls or result.retry_instruction or result.finish_reason == "length":
+        logger.warning("HR incomplete reply dossier={} model={} finish_reason={} bytes={} tool_calls={} retry={}",
+                       row.id, model.id, result.finish_reason, len(content.encode()), bool(result.tool_calls), bool(result.retry_instruction))
         raise HTTPException(502, "HR 返回内容不完整，请重试")
     try:
         answer = HRReply.model_validate_json(content)
     except ValidationError as exc:
+        logger.warning("HR invalid reply dossier={} model={} errors={}", row.id, model.id,
+                       [{"loc": error["loc"], "type": error["type"]} for error in exc.errors(include_input=False)][:20])
         raise HTTPException(502, "HR 回复格式不完整，请重试") from exc
     if answer.resume:
         await validate_resume(db, user, answer.resume)

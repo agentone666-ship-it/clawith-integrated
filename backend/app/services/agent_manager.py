@@ -1,8 +1,8 @@
-"""Agent lifecycle manager — Docker container management for OpenClaw Gateway instances."""
+"""Agent availability and legacy OpenClaw Gateway container lifecycle."""
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import docker
@@ -11,10 +11,11 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dao import query_dao
 from app.config import get_settings
+from app.dao import query_dao
 from app.models.agent import Agent, AgentTemplate
 from app.models.llm import LLMModel
+from app.services.agent_runtime.config import decide_runtime_v2
 from app.services.llm import get_model_api_key
 from app.services.llm.model_resolution import resolve_active_agent_model
 from app.services.storage import get_storage_backend, normalize_storage_key
@@ -160,7 +161,7 @@ class AgentManager:
             template_content,
             agent_name=agent.name,
             creator_name=creator_name,
-            created_at=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            created_at=datetime.now(UTC).strftime("%Y-%m-%d"),
         )
 
         # Helper function to replace or append sections
@@ -249,18 +250,28 @@ class AgentManager:
         return config
 
     async def start_container(self, db: AsyncSession, agent: Agent) -> str | None:
-        """Start an OpenClaw Gateway Docker container for the agent.
+        """Make a native Runtime Agent available, or start its existing gateway path.
 
-        Returns container_id or None if Docker not available.
+        Returns a gateway container ID or None when no gateway starts. Inspect
+        Agent.status for availability; None alone does not indicate success.
         """
         if agent.deleted_at is not None:
             logger.info("Agent {} is deleted; skipping container start", agent.id)
             return None
 
+        if agent.agent_type == "native" and not agent.container_id and decide_runtime_v2(
+            agent_id=agent.id, source_type="chat", settings=settings,
+        ).use_v2:
+            # Native v2 work runs in the shared worker, not an OpenClaw gateway.
+            agent.status = "idle"
+            agent.last_active_at = datetime.now(UTC)
+            logger.info("Native Runtime Agent {} is available without a gateway container", agent.id)
+            return None
+
         if not self.docker_client:
             logger.info("Docker not available, skipping container start")
             agent.status = "idle"
-            agent.last_active_at = datetime.now(timezone.utc)
+            agent.last_active_at = datetime.now(UTC)
             return None
 
         agent_dir = await self._materialize_agent_dir(agent.id)
@@ -305,7 +316,7 @@ class AgentManager:
             agent.container_id = container.id
             agent.container_port = container_port
             agent.status = "running"
-            agent.last_active_at = datetime.now(timezone.utc)
+            agent.last_active_at = datetime.now(UTC)
 
             logger.info(f"Started container {container.id[:12]} for agent {agent.name} on port {container_port}")
             return container.id

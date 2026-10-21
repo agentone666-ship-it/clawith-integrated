@@ -65,6 +65,11 @@ HR recruitment is owned by `services/recruitment.py` and
 intake retain their existing authority. See `docs/agent-notes/recruitment.md`
 for dossier, resume, interview and human-review contracts.
 
+`services/agent_manager.py` owns Agent availability during creation and start.
+Native Agents routed to Runtime v2 chat without an existing gateway container
+become idle for the shared worker; they do not require an OpenClaw image. This
+availability state does not establish worker health or successful execution.
+
 ## Async lifecycle
 
 Represent one asynchronous operation with one lifecycle controller or
