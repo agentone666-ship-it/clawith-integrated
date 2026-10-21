@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validator, model_validator
 
 from app.services.timezone_utils import validate_timezone_name
 
@@ -241,6 +241,14 @@ class AgentCreate(BaseModel):
     max_tokens_per_month: int | None = None
     # Skills to copy into agent workspace
     skill_ids: list[uuid.UUID] = []
+    recruitment_id: uuid.UUID | None = None
+    recruitment_revision: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def recruitment_reference_is_complete(self):
+        if (self.recruitment_id is None) != (self.recruitment_revision is None):
+            raise ValueError("recruitment_id and recruitment_revision must be provided together")
+        return self
 
 
 class AgentOut(BaseModel):

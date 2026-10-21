@@ -48,4 +48,7 @@ From `frontend/` directory:
 
 ## 5. Lifecycle Ownership
 
-Frontend-specific lifecycle ownership and cleanup rules will be defined here.
+The HR recruitment UI lives in `src/pages/recruitment/` and uses the shared
+request wrapper in `src/services/api.ts`. Dossiers and interview execution are
+Backend-owned; the UI polls native Run projections and never invents completion
+or pass status. See `docs/agent-notes/recruitment.md` for its contract.

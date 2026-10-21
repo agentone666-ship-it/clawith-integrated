@@ -60,6 +60,11 @@ Read the nearest nested `AGENTS.md` before modifying a specialized subtree.
 Detailed module structure belongs to that subtree's instruction or owning
 architecture document, not this file.
 
+HR recruitment is owned by `services/recruitment.py` and
+`services/recruitment_interviews.py`; native Agent creation and Runtime chat
+intake retain their existing authority. See `docs/agent-notes/recruitment.md`
+for dossier, resume, interview and human-review contracts.
+
 ## Async lifecycle
 
 Represent one asynchronous operation with one lifecycle controller or

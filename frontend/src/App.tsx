@@ -15,6 +15,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Plaza = lazy(() => import('./pages/Plaza'));
 const AgentDetail = lazy(() => import('./pages/AgentDetail'));
 const AgentCreate = lazy(() => import('./pages/AgentCreate'));
+const RecruitmentPage = lazy(() => import('./pages/recruitment/RecruitmentPage').then(module => ({ default: module.RecruitmentPage })));
 const Messages = lazy(() => import('./pages/Messages'));
 const EnterpriseSettings = lazy(() => import('./pages/EnterpriseSettings'));
 const InvitationCodes = lazy(() => import('./pages/InvitationCodes'));
@@ -285,7 +286,10 @@ export default function App() {
                     <Route index element={<Navigate to="/dashboard" replace />} />
                     <Route path="dashboard" element={<Dashboard />} />
                     <Route path="plaza" element={<Plaza />} />
-                    <Route path="agents/new" element={<AgentCreate />} />
+                    <Route path="agents/new" element={<Navigate to="/recruitment" replace />} />
+                    <Route path="agents/configure" element={<AgentCreate />} />
+                    <Route path="recruitment" element={<RecruitmentPage />} />
+                    <Route path="recruitment/:dossierId" element={<RecruitmentPage />} />
                     <Route path="agents/:id" element={<Navigate to="chat" replace />} />
                     <Route path="agents/:id/chat" element={<AgentDetail />} />
                     <Route path="agents/:id/directory" element={<AgentDetail />} />
