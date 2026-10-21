@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validator, model_validator
 
 from app.services.timezone_utils import validate_timezone_name
 
@@ -214,6 +214,8 @@ class UserUpdate(BaseModel):
 # ─── Agent ──────────────────────────────────────────────
 
 class AgentCreate(BaseModel):
+    employee_blueprint_id: uuid.UUID | None = None
+    employee_blueprint_revision: int | None = Field(default=None, ge=1)
     name: str = Field(min_length=2, max_length=100, description="Agent name, 2-100 characters")
     agent_type: str = "native"  # native | openclaw
     role_description: str = Field(default="", max_length=500, description="Role description, max 500 characters")
@@ -241,6 +243,14 @@ class AgentCreate(BaseModel):
     max_tokens_per_month: int | None = None
     # Skills to copy into agent workspace
     skill_ids: list[uuid.UUID] = []
+
+    @model_validator(mode="after")
+    def validate_blueprint_reference(self):
+        if (self.employee_blueprint_id is None) != (self.employee_blueprint_revision is None):
+            raise ValueError("employee_blueprint_id and employee_blueprint_revision must be supplied together")
+        if self.employee_blueprint_id is not None and self.agent_type != "native":
+            raise ValueError("Employee blueprints require a native agent")
+        return self
 
 
 class AgentOut(BaseModel):

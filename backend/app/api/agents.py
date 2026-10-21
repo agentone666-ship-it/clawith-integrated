@@ -36,6 +36,7 @@ from app.models.skill import Skill
 from app.services.resource_discovery import import_mcp_from_smithery
 from app.services.agent_runtime.persistence import enqueue_cancel
 from app.services.llm.model_resolution import load_active_model
+from app.services.employee_studio import prepare_creation, compile_personality, bind_created_agent
 from app.dao import agent_dao, tenant_dao, user_dao
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -408,6 +409,31 @@ async def create_agent(
     if current_user.role in ("platform_admin", "org_admin") and data.tenant_id:
         target_tenant_id = data.tenant_id
 
+    blueprint = None
+    specification = None
+    if data.employee_blueprint_id is not None:
+        assert data.employee_blueprint_revision is not None
+        blueprint, specification = await prepare_creation(
+            db, current_user, data.employee_blueprint_id, data.employee_blueprint_revision,
+            target_tenant_id=target_tenant_id,
+        )
+        # The saved specification is authoritative, even for direct API callers.
+        data = data.model_copy(update={
+            "name": specification.name.strip(),
+            "role_description": specification.objective[:500],
+            "personality": compile_personality(specification),
+            "boundaries": "\n".join(specification.boundaries),
+            "skill_ids": list(dict.fromkeys(specification.skill_ids)),
+            "template_id": None,
+            "permission_scope_type": "user",
+            "permission_scope_ids": [],
+            "autonomy_policy": {
+                "execute_code": "L3", "access_business_system_write": "L3",
+                "financial_operations": "L3", "send_external_message": "L3",
+                "delete_files": "L3", "modify_soul": "L3",
+            },
+        })
+
     # Get default limits from target tenant
     max_llm_calls = 1000
     default_max_triggers = 20
@@ -455,6 +481,8 @@ async def create_agent(
         tenant_id=target_tenant_id,
         field_name="fallback_model_id",
     )
+    if blueprint is not None and effective_primary_model_id is None:
+        raise HTTPException(400, "创建岗位员工需要配置可用模型")
     expires_at = datetime.now(timezone.utc) + timedelta(hours=ttl_hours) if ttl_hours and ttl_hours > 0 else None
 
     agent = Agent(
@@ -483,6 +511,9 @@ async def create_agent(
 
     db.add(agent)
     await db.flush()
+
+    if blueprint is not None and specification is not None:
+        bind_created_agent(db, blueprint, specification, agent.id)
 
     # Auto-create Participant identity for the new agent
     db.add(

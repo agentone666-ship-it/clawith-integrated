@@ -3,6 +3,7 @@ import { useAuthStore } from './stores';
 import { Suspense, lazy, useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { authApi } from './services/api';
+import { EmployeeStudioEntry } from './pages/employee-studio/EmployeeStudioEntry';
 
 const Login = lazy(() => import('./pages/Login'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
@@ -23,6 +24,7 @@ const OAuthCallback = lazy(() => import('./pages/OAuthCallback'));
 const SSOEntry = lazy(() => import('./pages/SSOEntry'));
 const OKR = lazy(() => import('./pages/OKR'));
 const GroupsPage = lazy(() => import('./pages/groups/GroupsPage'));
+const EmployeeStudio = lazy(() => import('./pages/employee-studio/EmployeeStudio').then(module => ({ default: module.EmployeeStudio })));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const token = useAuthStore((s) => s.token);
@@ -283,7 +285,8 @@ export default function App() {
                 <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
                 <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
                     <Route index element={<Navigate to="/dashboard" replace />} />
-                    <Route path="dashboard" element={<Dashboard />} />
+                    <Route path="dashboard" element={<><EmployeeStudioEntry /><Dashboard /></>} />
+                    <Route path="employee-studio" element={<EmployeeStudio />} />
                     <Route path="plaza" element={<Plaza />} />
                     <Route path="agents/new" element={<AgentCreate />} />
                     <Route path="agents/:id" element={<Navigate to="chat" replace />} />

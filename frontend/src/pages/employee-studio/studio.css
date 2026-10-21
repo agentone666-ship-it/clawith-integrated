@@ -1,0 +1,33 @@
+.employee-studio { max-width: 1280px; margin: 0 auto; padding: 32px; color: var(--text-primary); }
+.employee-studio h1 { margin: 8px 0; font-size: clamp(22px, 3vw, 30px); letter-spacing: -.6px; }
+.employee-studio h2 { font-size: 18px; margin: 0 0 20px; }
+.employee-studio h3 { font-size: 14px; margin: 12px 0; }
+.studio-kicker { color: var(--accent-primary); font-size: 12px; letter-spacing: 1px; margin: 0; }
+.studio-muted { color: var(--text-secondary); font-size: 13px; line-height: 1.65; margin: 0; }
+.studio-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 28px; margin-top: 28px; }
+.studio-sidebar { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+.studio-content { min-width: 0; }
+.studio-content fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.studio-panel { padding: 24px; margin-bottom: 20px; border: 1px solid var(--border-default); border-radius: 12px; background: var(--bg-primary); }
+.studio-form { display: flex; flex-direction: column; gap: 16px; }
+.studio-form label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 1.5; }
+.studio-form .form-textarea { width: 100%; min-height: 0; resize: vertical; }
+.studio-form .form-input { width: 100%; }
+.studio-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.studio-form .studio-row { justify-content: flex-start; }
+.studio-form .studio-choice { flex-direction: row; align-items: center; }
+.studio-choice input { flex-shrink: 0; }
+.studio-draft { padding: 14px; display: flex; flex-direction: column; gap: 8px; text-align: left; border: 1px solid var(--border-default); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; }
+.studio-draft.selected { border-color: var(--accent-primary); background: var(--accent-subtle); }
+.studio-draft span { font-size: 12px; color: var(--text-secondary); }
+.studio-test { display: flex; flex-direction: column; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--border-default); }
+.studio-error { color: var(--error, #b42318); line-height: 1.6; }
+.studio-checks { margin-top: 16px; font-size: 13px; line-height: 1.7; }
+.studio-capabilities { min-height: 120px; }
+.employee-studio button:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 800px) {
+    .employee-studio { padding: 20px 16px; }
+    .studio-layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+    .studio-panel { padding: 18px; }
+    .studio-sidebar { max-height: 280px; overflow-y: auto; }
+}
