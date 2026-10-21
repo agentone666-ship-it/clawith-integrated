@@ -152,8 +152,8 @@ export function RecruitmentPage() {
             {dossierId && <button className="btn btn-secondary" disabled={!!busy} onClick={() => { setError(''); void dossierQuery.refetch(); if (row?.candidate_id) void candidate.refetch(); }}>刷新记录</button>}
         </div>}
         {!modelQuery.isPending && !modelQuery.error && models.length === 0 && <div className="recruit-notice" role="status">
-            <IconSettings size={17} /><div><strong>HR 还缺少一个可用模型</strong><p>{canConfigure ? '配置企业模型后，就可以开始对话招聘和真实面试。' : '请联系管理员配置企业模型，然后回来开始招聘。'}</p></div>
-            {canConfigure && <Link className="btn btn-secondary" to="/enterprise#llm">配置模型</Link>}
+            <IconSettings size={17} /><div><strong>HR 还缺少一个可用模型</strong><p>{canConfigure ? '在左侧「公司设置 → 模型池」配置模型后，即可开始招聘和面试。' : '请联系管理员配置企业模型，然后回来开始招聘。'}</p></div>
+            {canConfigure && <Link className="btn btn-secondary" title="前往公司设置的模型池" to="/enterprise#llm">配置模型</Link>}
         </div>}
         <div className="recruit-workspace">
             <section className="recruit-chat" aria-label="与招聘 HR 对话">

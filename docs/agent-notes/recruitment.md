@@ -9,6 +9,15 @@ There is no technical test-case authoring prerequisite. Advanced manual creation
 and external Agent connection remain available from the market footer; the old
 standalone wizard is at `/agents/configure`.
 
+Company settings are also a fixed main-sidebar destination for the same
+administrators already authorized by the native settings route. The existing
+workspace-menu shortcut remains available. Recruitment's missing-model notice
+links directly to `/enterprise#llm`; ordinary users are asked to contact their
+administrator instead of being sent into administrator settings.
+The administrator notice explicitly names the persistent path, "Company
+settings → Model pool", so the shortcut also teaches where to return later.
+The native sidebar active state remains visible after navigating to settings.
+
 `Recruitment` owns one tenant/creator-private dossier: HR messages, the current
 resume, its optimistic revision, the current candidate identity and immutable
 interview input/version references with editable human reviews. It does not own

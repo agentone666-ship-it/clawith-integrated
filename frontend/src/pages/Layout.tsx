@@ -1079,6 +1079,12 @@ export default function Layout() {
                                 <span className="sidebar-item-badge">{groupUnread > 99 ? '99+' : groupUnread}</span>
                             )}
                         </NavLink>
+                        {canAccessCompanySettings && (
+                            <NavLink to="/enterprise" title={isChinese ? '公司设置' : 'Company settings'} className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
+                                <span className="sidebar-item-icon" style={{ display: 'flex' }}>{SidebarIcons.settings}</span>
+                                <span className="sidebar-item-text">{isChinese ? '公司设置' : 'Company settings'}</span>
+                            </NavLink>
+                        )}
                     </div>
                 </div>
                 
