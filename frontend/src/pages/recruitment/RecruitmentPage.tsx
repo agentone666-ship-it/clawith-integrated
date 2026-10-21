@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 import { IconArrowLeft, IconArrowUp, IconBriefcase, IconCheck, IconFileText, IconMessageCircle, IconPlus, IconSettings, IconUser } from '@tabler/icons-react';
 import { agentApi, enterpriseApi, tenantApi } from '../../services/api';
 import { recruitmentApi } from '../../services/recruitmentApi';
 import MarkdownRenderer from '../../components/MarkdownRenderer';
 import { useAuthStore } from '../../stores';
+import type { ModelSettingsGuideContext } from '../../components/ModelSettingsGuide';
 import { ResumePanel } from './ResumePanel';
 import { InterviewPanel } from './InterviewPanel';
 import type { Dossier, InterviewTask, Model, Resume } from './types';
@@ -23,6 +24,7 @@ export function RecruitmentPage() {
     const [search] = useSearchParams();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
+    const { startModelSettingsGuide } = useOutletContext<ModelSettingsGuideContext>();
     const user = useAuthStore(s => s.user);
     const [composer, setComposer] = useState(() => search.get('role') ? `我想招聘：${search.get('role')}` : '');
     const [sourceRole, setSourceRole] = useState(search.get('role'));
@@ -152,8 +154,8 @@ export function RecruitmentPage() {
             {dossierId && <button className="btn btn-secondary" disabled={!!busy} onClick={() => { setError(''); void dossierQuery.refetch(); if (row?.candidate_id) void candidate.refetch(); }}>刷新记录</button>}
         </div>}
         {!modelQuery.isPending && !modelQuery.error && models.length === 0 && <div className="recruit-notice" role="status">
-            <IconSettings size={17} /><div><strong>HR 还缺少一个可用模型</strong><p>{canConfigure ? '在左侧「公司设置 → 模型池」配置模型后，即可开始招聘和面试。' : '请联系管理员配置企业模型，然后回来开始招聘。'}</p></div>
-            {canConfigure && <Link className="btn btn-secondary" title="前往公司设置的模型池" to="/enterprise#llm">配置模型</Link>}
+            <IconSettings size={17} /><div><strong>HR 还缺少一个可用模型</strong><p>{canConfigure ? '点击「配置模型」，跟着引导找到公司设置和模型池。' : '请联系管理员配置企业模型，然后回来开始招聘。'}</p></div>
+            {canConfigure && <button className="btn btn-secondary" onClick={startModelSettingsGuide}>配置模型</button>}
         </div>}
         <div className="recruit-workspace">
             <section className="recruit-chat" aria-label="与招聘 HR 对话">

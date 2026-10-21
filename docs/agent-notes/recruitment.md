@@ -9,14 +9,17 @@ There is no technical test-case authoring prerequisite. Advanced manual creation
 and external Agent connection remain available from the market footer; the old
 standalone wizard is at `/agents/configure`.
 
-Company settings are also a fixed main-sidebar destination for the same
-administrators already authorized by the native settings route. The existing
-workspace-menu shortcut remains available. Recruitment's missing-model notice
-links directly to `/enterprise#llm`; ordinary users are asked to contact their
-administrator instead of being sent into administrator settings.
-The administrator notice explicitly names the persistent path, "Company
-settings → Model pool", so the shortcut also teaches where to return later.
-The native sidebar active state remains visible after navigating to settings.
+Company settings retain their original workspace-menu entry; no extra sidebar
+destination is added. Recruitment's administrator-only "Configure model" button
+starts a click-through walkthrough: company-name button, the original Company
+settings menu item, then the Model pool tab. Each highlight advances only after
+the user operates the actual control; no automatic menu opening or route jump
+substitutes for discovering the entry. The Layout owns the temporary walkthrough
+flag across child-route changes. Closing, Escape, completion or navigation away
+from recruitment/settings ends it; it can be started again. Observers and resize,
+scroll and keyboard listeners clean up when the step changes or the guide ends.
+The final hint repeats the original path. Ordinary users are asked to contact
+their administrator; native settings authorization remains unchanged.
 
 `Recruitment` owns one tenant/creator-private dossier: HR messages, the current
 resume, its optimistic revision, the current candidate identity and immutable

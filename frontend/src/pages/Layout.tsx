@@ -35,6 +35,7 @@ import {
 } from '@tabler/icons-react';
 import { useAppStore } from '../stores';
 import TalentMarketModal from '../components/TalentMarketModal';
+import { ModelSettingsGuide } from '../components/ModelSettingsGuide';
 
 /* ────── Tabler Icons ────── */
 const SidebarIcons = {
@@ -452,6 +453,7 @@ export default function Layout() {
     const [notifCategory, setNotifCategory] = useState<string>('all');
     const [selectedNotification, setSelectedNotification] = useState<any | null>(null);
     const [showTenantMenu, setShowTenantMenu] = useState(false);
+    const [showModelSettingsGuide, setShowModelSettingsGuide] = useState(false);
     const [showTenantSetupModal, setShowTenantSetupModal] = useState(false);
     const [tenantSearch, setTenantSearch] = useState('');
     const [joinInviteCode, setJoinInviteCode] = useState('');
@@ -882,6 +884,7 @@ export default function Layout() {
                 <button
                     type="button"
                     className="tenant-switcher-action"
+                    data-tour-target="company-settings"
                     onClick={() => {
                         setShowTenantMenu(false);
                         navigate('/enterprise');
@@ -1079,12 +1082,6 @@ export default function Layout() {
                                 <span className="sidebar-item-badge">{groupUnread > 99 ? '99+' : groupUnread}</span>
                             )}
                         </NavLink>
-                        {canAccessCompanySettings && (
-                            <NavLink to="/enterprise" title={isChinese ? '公司设置' : 'Company settings'} className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
-                                <span className="sidebar-item-icon" style={{ display: 'flex' }}>{SidebarIcons.settings}</span>
-                                <span className="sidebar-item-text">{isChinese ? '公司设置' : 'Company settings'}</span>
-                            </NavLink>
-                        )}
                     </div>
                 </div>
                 
@@ -1390,7 +1387,12 @@ export default function Layout() {
             )}
 
             <main className={`main-content${isChatPage ? ' chat-page' : ''}${isAgentSettingsPage ? ' agent-settings-page' : ''}${isGroupsPage ? ' groups-shell' : ''}`}>
-                <Outlet context={{ openTalentMarket: () => setShowTalentMarket(true) }} />
+                <Outlet context={{ openTalentMarket: () => setShowTalentMarket(true), startModelSettingsGuide: () => {
+                    if (!canAccessCompanySettings) return;
+                    setShowTenantMenu(false);
+                    setShowAccountMenu(false);
+                    setShowModelSettingsGuide(true);
+                } }} />
             </main>
 
             {showAccountSettings && (
@@ -1405,6 +1407,10 @@ export default function Layout() {
                 open={showTalentMarket}
                 onClose={() => setShowTalentMarket(false)}
             />
+            {showModelSettingsGuide && canAccessCompanySettings && !showCompanyTour && (
+                <ModelSettingsGuide pathname={location.pathname} hash={location.hash} menuOpen={showTenantMenu}
+                    isChinese={!!isChinese} onDismiss={() => setShowModelSettingsGuide(false)} />
+            )}
             {showCompanyTour && (
                 <CompanyTourOverlay
                     assistantId={tourAssistantId}
