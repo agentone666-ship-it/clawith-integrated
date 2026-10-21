@@ -54,18 +54,26 @@ export function ModelSettingsGuide({ pathname, hash, menuOpen, isChinese, onDism
     useLayoutEffect(() => {
         let frame = 0;
         let target: HTMLElement | null = null;
+        let previousPosition: Position | null | undefined;
+        const publishPosition = (next: Position | null) => {
+            if (previousPosition !== undefined &&
+                (previousPosition === next || (previousPosition && next &&
+                    previousPosition.spot.left === next.spot.left && previousPosition.spot.top === next.spot.top &&
+                    previousPosition.spot.width === next.spot.width && previousPosition.spot.height === next.spot.height &&
+                    previousPosition.card.left === next.card.left && previousPosition.card.top === next.card.top))) return;
+            previousPosition = next;
+            setPosition(next);
+        };
         const update = () => {
-            const element = document.querySelector<HTMLElement>(current.selector);
-            if (!element) { setPosition(null); return; }
+            const element = target?.isConnected ? target : document.querySelector<HTMLElement>(current.selector);
+            if (!element) { publishPosition(null); return; }
             if (target !== element) {
                 target = element;
                 element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
                 element.focus({ preventScroll: true });
-                resizeObserver.observe(element);
-                mutationObserver.disconnect();
             }
             const rect = element.getBoundingClientRect();
-            if (rect.width === 0 || rect.height === 0) { setPosition(null); return; }
+            if (rect.width === 0 || rect.height === 0) { publishPosition(null); return; }
             const width = window.innerWidth;
             const height = window.innerHeight;
             const cardWidth = Math.min(320, width - 24);
@@ -74,22 +82,15 @@ export function ModelSettingsGuide({ pathname, hash, menuOpen, isChinese, onDism
             const right = spot.left + spot.width + 18;
             const cardLeft = right + cardWidth <= width - 12 ? right : clamp(spot.left, 12, width - cardWidth - 12);
             const cardTop = right + cardWidth <= width - 12 ? spot.top : spot.top + spot.height + 18;
-            setPosition({ spot, card: { left: cardLeft, top: clamp(cardTop, 12, height - 240) } });
+            publishPosition({ spot, card: { left: cardLeft, top: clamp(cardTop, 12, height - 240) } });
         };
-        const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(update); };
-        const resizeObserver = new ResizeObserver(schedule);
-        const mutationObserver = new MutationObserver(schedule);
-        mutationObserver.observe(document.body, { childList: true, subtree: true });
-        window.addEventListener('resize', schedule);
-        window.addEventListener('scroll', schedule, true);
-        schedule();
-        return () => {
-            cancelAnimationFrame(frame);
-            resizeObserver.disconnect();
-            mutationObserver.disconnect();
-            window.removeEventListener('resize', schedule);
-            window.removeEventListener('scroll', schedule, true);
+        const trackPosition = () => {
+            // Ancestor transforms move the target without triggering ResizeObserver.
+            update();
+            frame = requestAnimationFrame(trackPosition);
         };
+        frame = requestAnimationFrame(trackPosition);
+        return () => cancelAnimationFrame(frame);
     }, [current.selector]);
 
     const title = complete ? (isChinese ? '你已经找到模型池了' : 'You found the Model pool') : isChinese ? current.title : current.enTitle;

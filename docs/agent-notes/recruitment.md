@@ -16,8 +16,12 @@ settings menu item, then the Model pool tab. Each highlight advances only after
 the user operates the actual control; no automatic menu opening or route jump
 substitutes for discovering the entry. The Layout owns the temporary walkthrough
 flag across child-route changes. Closing, Escape, completion or navigation away
-from recruitment/settings ends it; it can be started again. Observers and resize,
-scroll and keyboard listeners clean up when the step changes or the guide ends.
+from recruitment/settings ends it; it can be started again. Keyboard listeners
+clean up when the guide ends. The active step tracks its target's viewport
+rectangle each animation frame, including ancestor transforms
+from the workspace menu's opening animation; target size observations alone miss
+these movements. Unchanged geometry does not update React state, and the frame
+loop is cancelled when the step changes or the guide ends.
 The final hint repeats the original path. Ordinary users are asked to contact
 their administrator; native settings authorization remains unchanged.
 
@@ -122,6 +126,10 @@ themes, reduced motion and stacked narrow-screen layouts.
   native visual style and honest missing-model notice. A live configured model
   is required for actual HR conversations and completed employee work; automated
   checks do not establish business acceptance.
+- Guide positioning fix: focused ESLint and `npx tsc --noEmit` pass. Browser
+  rectangle measurements verify 5px highlight padding at all three targets,
+  including after the workspace menu animation finishes; the original settings
+  entry, model-pool completion and guide dismissal remain functional.
 
 The five new Backend modules pass focused Pyright. Including the existing
 `app/api/agents.py` also reports three unchanged baseline errors: its unread
