@@ -1753,9 +1753,17 @@ class RuntimeModelStepService:
         """Resolve private screenshot refs only for the outbound model request."""
         screenshot_messages: dict[str, Mapping[str, object]] = {}
         for raw in build.recent_thread_messages:
+            evidence = raw.get("evidence_refs")
+            has_private_image = isinstance(evidence, (list, tuple)) and any(
+                isinstance(ref, str) and ref.startswith("tool-result-binary://")
+                for ref in evidence
+            )
             if (
                 raw.get("role") != "tool"
-                or raw.get("name") not in _AGENTBAY_SCREENSHOT_TOOL_NAMES
+                or (
+                    raw.get("name") not in _AGENTBAY_SCREENSHOT_TOOL_NAMES
+                    and not has_private_image
+                )
             ):
                 continue
             call_id = raw.get("tool_call_id")
@@ -1795,7 +1803,17 @@ class RuntimeModelStepService:
                     tenant_id=tenant_id,
                     run_id=run_id,
                 )
-            except ToolResultStoreError:
+            except ToolResultStoreError as exc:
+                if exc.code == "tool_binary_scope_mismatch":
+                    injected[index] = replace(
+                        message,
+                        content=(
+                            str(message.content)
+                            + "\nScreenshot pixels are not available in the current Run. "
+                            "Read fresh screen state before making a new GUI action."
+                        ),
+                    )
+                    continue
                 raise
             except Exception as exc:
                 raise ToolResultStoreError(
@@ -1811,7 +1829,7 @@ class RuntimeModelStepService:
             text = (
                 message.content
                 if isinstance(message.content, str) and message.content
-                else "AgentBay screenshot evidence."
+                else "Private tool screenshot evidence."
             )
             injected[index] = replace(
                 message,

@@ -33,6 +33,7 @@ from app.services.agent_runtime.tool_execution import (
     ToolExecutionOutcome,
     ToolExecutionReservation,
 )
+from app.services.agent_runtime.tool_result_store import ToolResultStoreError
 from app.services.builtin_tool_definitions import (
     builtin_model_definition,
     builtin_policy,
@@ -1052,9 +1053,11 @@ async def test_replayed_screenshot_receipt_never_reinvokes_provider_or_rearchive
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mcp_name", [None, "mcp_cua_computer"])
 async def test_settled_screenshot_is_resolved_after_restart_only_for_next_model_request(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    mcp_name: str | None,
 ) -> None:
     case = SCREENSHOT_CASES[0]
     shared_private_storage: dict[str, bytes] = {}
@@ -1066,6 +1069,13 @@ async def test_settled_screenshot_is_resolved_after_restart_only_for_next_model_
         workspace_root=tmp_path,
         result_store=writer,
     )
+    if mcp_name:
+        tool_result.messages[0]["name"] = mcp_name
+        # The generic resolver recognizes the production private-image scheme;
+        # the original AgentBay fixture intentionally uses an opaque fake ref.
+        binary_ref = f"tool-result-binary://{execution.id}"
+        shared_private_storage[binary_ref] = shared_private_storage[PRIVATE_IMAGE_REF]
+        tool_result.messages[0]["evidence_refs"] = [binary_ref]
     persisted_tool_message = deepcopy(tool_result.messages[0])
     persisted_execution_metadata = deepcopy(execution.result_metadata)
 
@@ -1181,6 +1191,26 @@ async def test_settled_screenshot_is_resolved_after_restart_only_for_next_model_
         dynamic_prompt="Dynamic",
     )
     assert isinstance(prepared, list)
+    class OtherRunStore:
+        async def resolve_binary(self, _ref: str, **scope) -> bytes:
+            assert scope["run_id"] == execution.run_id
+            raise ToolResultStoreError("tool_binary_scope_mismatch", "Other run")
+
+    scoped_service = RuntimeModelStepService(
+        session_factory=session_factory(agent),
+        context_builder=FixedContextBuilder(),  # type: ignore[arg-type]
+        completion=completion,
+        tool_provider=lambda _agent_id: None,  # type: ignore[arg-type]
+        prompt_builder=lambda *_args, **_kwargs: None,  # type: ignore[arg-type]
+        tool_result_store=OtherRunStore(),  # type: ignore[arg-type]
+    )
+    historical = await scoped_service._inject_private_screenshot_evidence(
+        prepared, build=build, context=context,
+    )
+    historical_tool = next(m for m in historical if m.role == "tool")
+    assert isinstance(historical_tool.content, str)
+    assert "Read fresh screen state" in historical_tool.content
+    assert persisted_tool_message == tool_result.messages[0]
     await service._call_prepared(
         model=model,
         agent=agent,

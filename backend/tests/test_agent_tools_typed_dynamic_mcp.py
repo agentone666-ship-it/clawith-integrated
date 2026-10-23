@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import uuid
+from io import BytesIO
 
 import httpx
 import pytest
@@ -11,6 +13,38 @@ import pytest
 from app.services import agent_tools
 from app.services.agent_runtime.tool_execution import ToolExecutionOutcome
 from app.services.mcp_client import MCPClient
+
+
+def test_mcp_image_is_private_binary_not_model_text():
+    from PIL import Image
+
+    stream = BytesIO()
+    Image.new("RGB", (8, 8), "blue").save(stream, format="PNG")
+    raw = stream.getvalue()
+    encoded = base64.b64encode(raw).decode()
+    outcome = agent_tools._mcp_call_response_outcome(
+        {"result": {"content": [{"type": "image", "mimeType": "image/png", "data": encoded}]}},
+        full_tool_name="mcp_cua_computer",
+    )
+    assert outcome.status == "succeeded"
+    assert outcome.private_binary == raw
+    assert outcome.metadata["mime_type"] == "image/png"
+    assert encoded not in outcome.result_summary
+    assert encoded not in json.dumps(outcome.metadata)
+
+
+@pytest.mark.parametrize("image", [
+    {"type": "image", "mimeType": "image/png", "data": "not-base64!"},
+    {"type": "image", "mimeType": "image/png", "data": base64.b64encode(b"not an image").decode()},
+    {"type": "image", "mimeType": "text/html", "data": "aGVsbG8="},
+])
+def test_mcp_invalid_image_does_not_claim_success(image):
+    outcome = agent_tools._mcp_call_response_outcome(
+        {"result": {"content": [image]}}, full_tool_name="mcp_cua_computer",
+    )
+    assert outcome.status == "unknown"
+    assert outcome.error_code == "mcp_image_invalid"
+    assert outcome.private_binary is None
 
 
 def _tool(name: str) -> dict:

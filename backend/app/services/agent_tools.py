@@ -7555,6 +7555,44 @@ def _mcp_call_response_outcome(
         return async_outcome
     if is_error:
         return _typed_failure(summary, "mcp_tool_error")
+    # MCP screenshot providers use the same private binary store as built-in
+    # screenshot tools. Keep pixels out of text summaries and durable messages.
+    images = [block for block in result.get("content", [])
+              if isinstance(block, dict) and block.get("type") == "image"]
+    if images:
+        import base64
+        import binascii
+        from io import BytesIO
+
+        from PIL import Image
+
+        try:
+            if len(images) != 1:
+                raise ValueError("one image per MCP result is supported")
+            block = images[0]
+            mime = block.get("mimeType")
+            encoded = block.get("data")
+            if mime not in {"image/png", "image/jpeg", "image/webp"}:
+                raise ValueError("unsupported MCP image MIME type")
+            if not isinstance(encoded, str) or len(encoded) > 12 * 1024 * 1024:
+                raise ValueError("invalid or oversized MCP image")
+            raw = base64.b64decode(encoded, validate=True)
+            with Image.open(BytesIO(raw)) as image:
+                if Image.MIME.get(image.format) != mime:
+                    raise ValueError("MCP image MIME type does not match pixels")
+                if image.width * image.height > 20_000_000:
+                    raise ValueError("MCP screenshot dimensions exceed the limit")
+                image.verify()
+        except (ValueError, TypeError, binascii.Error, OSError, Image.DecompressionBombError):
+            return _typed_unknown(
+                "MCP returned invalid screenshot evidence; inspect state before retrying.",
+                "mcp_image_invalid",
+            )
+        return _typed_success(
+            summary,
+            metadata={**metadata, "mime_type": mime, "model_visible_image": True},
+            private_binary=raw,
+        )
     return _typed_success(summary, metadata=metadata)
 
 
