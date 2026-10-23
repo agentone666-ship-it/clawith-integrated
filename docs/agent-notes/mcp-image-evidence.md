@@ -20,6 +20,13 @@ image outside that scope remains text with a request for fresh screen state;
 its pixels are not loaded and it does not prevent a later chat turn. Corrupt or
 missing bytes inside the accepted scope still fail evidence preparation.
 
+The deterministic completion verifier recognizes `tool-result-binary://` as a
+private ToolResultStore reference. It calls `resolve_binary` with the exact
+tenant and Run before accepting it, rather than sending the URI to an external
+artifact reader. Missing stores or invalid scope still block completion. This
+checks evidence readability; the existing task gate retains responsibility for
+whether the evidence proves the user's requested result.
+
 The current consumer is an atomic Cua Driver MCP tool. The model, multi-step
 planning, retries and task completion remain owned by Clawith Runtime. Neither
 the driver nor its transport adapter invokes an LLM. The integration runs on

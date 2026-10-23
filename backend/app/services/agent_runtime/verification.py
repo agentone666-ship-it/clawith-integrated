@@ -945,7 +945,7 @@ class ToolLedgerRuntimeVerifier:
         evidence_refs = list(dict.fromkeys(evidence_refs))
         reference_warnings: list[dict[str, object]] = []
         for reference in (*artifact_refs, *evidence_refs):
-            if reference.startswith("tool-result://"):
+            if reference.startswith(("tool-result://", "tool-result-binary://")):
                 if self._result_store is None:
                     return VerificationResult(
                         outcome="fail",
@@ -953,7 +953,12 @@ class ToolLedgerRuntimeVerifier:
                         details={"code": "tool_result_store_unavailable"},
                     )
                 try:
-                    await self._result_store.resolve(
+                    resolver = (
+                        self._result_store.resolve_binary
+                        if reference.startswith("tool-result-binary://")
+                        else self._result_store.resolve
+                    )
+                    await resolver(
                         reference,
                         tenant_id=tenant_id,
                         run_id=run_id,

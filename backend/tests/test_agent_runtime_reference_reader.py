@@ -11,11 +11,55 @@ import pytest
 from app.services import agent_tools
 from app.services.agent_runtime.node_executor import DefaultRuntimeFinalizer
 from app.services.agent_runtime.state import RuntimeContext
+from app.services.agent_runtime.tool_result_store import ToolResultStoreError
 from app.services.agent_runtime.verification import (
     RuntimeToolReferenceReader,
     ToolLedgerRuntimeVerifier,
 )
 from app.services.storage_runtime.base import StorageVersion
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["valid", "wrong_scope", "missing_store"])
+async def test_verifier_reads_private_binary_evidence_in_exact_run_scope(mode: str) -> None:
+    tenant_id, run_id = uuid.uuid4(), uuid.uuid4()
+    reference = f"tool-result-binary://{uuid.uuid4()}"
+    execution = SimpleNamespace(
+        status="succeeded", tool_call_id="call-image", tool_name="mcp_cua_computer",
+        result_ref=None, result_metadata={"artifact_refs": [], "evidence_refs": [reference]},
+    )
+    calls = []
+
+    class Store:
+        async def resolve_binary(self, ref: str, **scope) -> bytes:
+            calls.append((ref, scope))
+            if mode == "wrong_scope":
+                raise ToolResultStoreError("tool_binary_scope_mismatch", "Wrong scope")
+            return b"validated private screenshot"
+
+    verifier = ToolLedgerRuntimeVerifier(
+        session_factory=_factory(_ManyResult([execution])),
+        result_store=None if mode == "missing_store" else Store(),  # type: ignore[arg-type]
+    )
+    context = RuntimeContext(
+        tenant_id=str(tenant_id), run_id=str(run_id), command_id=str(uuid.uuid4()),
+        executor=object(),  # type: ignore[arg-type]
+    )
+    result = await verifier.verify(
+        {"lifecycle": {"pending_tool_calls": []}}, context, "done",  # type: ignore[arg-type]
+    )
+    if mode == "valid":
+        assert result.outcome == "pass"
+        assert result.details["evidence_refs"] == [reference]
+    elif mode == "wrong_scope":
+        assert result.outcome == "repair"
+        assert result.details["code"] == "tool_binary_scope_mismatch"
+    else:
+        assert result.outcome == "fail"
+        assert result.details["code"] == "tool_result_store_unavailable"
+    assert calls == ([] if mode == "missing_store" else [
+        (reference, {"tenant_id": tenant_id, "run_id": run_id})
+    ])
 
 
 class _ScalarResult:
