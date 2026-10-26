@@ -27,12 +27,14 @@ class MCPClient:
     Auto-detects the transport mode on first request.
     """
 
-    def __init__(self, server_url: str, api_key: str | None = None):
+    def __init__(self, server_url: str, api_key: str | None = None,
+                 request_meta: dict | None = None):
         # Extract apiKey from URL query params and move to Authorization header
         parsed = urlparse(server_url)
         qs = parse_qs(parsed.query, keep_blank_values=True)
 
         self.api_key = api_key
+        self._request_meta = request_meta
         if not self.api_key and "apiKey" in qs:
             self.api_key = qs.pop("apiKey")[0]
 
@@ -364,9 +366,12 @@ class MCPClient:
 
     async def call_tool_result(self, tool_name: str, arguments: dict) -> dict:
         """Execute once and preserve the complete JSON-RPC response."""
+        params = {"name": tool_name, "arguments": arguments}
+        if self._request_meta is not None:
+            params["_meta"] = self._request_meta
         data = await self._detect_and_request(
             "tools/call",
-            {"name": tool_name, "arguments": arguments},
+            params,
         )
         if not isinstance(data, dict):
             raise ValueError("MCP tools/call returned a non-object response")

@@ -7777,6 +7777,41 @@ async def _resolve_mcp_execution_target(
         }
 
 
+async def _mcp_runtime_request_meta(agent_id) -> dict:
+    """Opt-in MCP resource scope from Runtime facts, never model arguments.
+
+    The current Run must belong to the assigned agent. The tenant's held lanes
+    are a bounded, point-in-time snapshot used to reconcile a provider lease;
+    they do not authorize taking a lease from another tenant.
+    """
+    from app.models.agent_run import AgentRun
+
+    try:
+        run_id = uuid.UUID(sandbox_run_scope_id.get().strip())
+        scoped_agent_id = uuid.UUID(str(agent_id))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("MCP Runtime context is unavailable") from exc
+    async with async_session() as db:
+        result = await db.execute(select(AgentRun).where(
+            AgentRun.id == run_id, AgentRun.agent_id == scoped_agent_id,
+        ))
+        run = result.scalar_one_or_none()
+        if run is None:
+            raise ValueError("MCP Runtime context does not own this agent")
+        result = await db.execute(select(AgentRun.id).where(
+            AgentRun.tenant_id == run.tenant_id, AgentRun.lane_held.is_(True),
+        ).limit(257))
+        held = list(result.scalars().all())
+        active = {str(value) for value in held} | {str(run_id)}
+        if len(active) > 256:
+            raise ValueError("MCP Runtime lane snapshot exceeds its bound")
+    return {"io.clawith/runtime": {
+        "tenant_id": str(run.tenant_id), "run_id": str(run_id),
+        "agent_id": str(scoped_agent_id),
+        "active_run_ids": sorted(active),
+    }}
+
+
 async def _execute_resolved_mcp_target_outcome(
     target: dict,
     arguments: dict,
@@ -7842,7 +7877,17 @@ async def _execute_resolved_mcp_target_outcome(
         except Exception:
             direct_api_key = None
 
-    client = MCPClient(server_url, api_key=direct_api_key)
+    if config.get("runtime_context_meta") is True:
+        try:
+            request_meta = await _mcp_runtime_request_meta(agent_id)
+        except ValueError:
+            return _typed_failure(
+                "Runtime identity is unavailable; no MCP action was dispatched.",
+                "mcp_runtime_context_unavailable",
+            )
+        client = MCPClient(server_url, api_key=direct_api_key, request_meta=request_meta)
+    else:
+        client = MCPClient(server_url, api_key=direct_api_key)
     try:
         data = await client.call_tool_result(raw_name, arguments)
     except MCPTransportDetectionError:
