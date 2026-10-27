@@ -23,6 +23,21 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
+    # Feature-owned desktop workflow capability; shared Clawith authentication.
+    location /api/automations {
+        set $automation_upstream http://clawith-desktop-automation:8080;
+        proxy_pass $automation_upstream;
+        proxy_set_header Host $http_host;
+        client_max_body_size 256k;
+        proxy_read_timeout 185s;
+    }
+    location /api/automation-mcp/ {
+        set $automation_upstream http://clawith-desktop-automation:8080;
+        proxy_pass $automation_upstream;
+        client_max_body_size 64k;
+        proxy_read_timeout 185s;
+    }
+
     # API proxy
     location /api/ {
         proxy_pass $api_upstream;

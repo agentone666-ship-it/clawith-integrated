@@ -18,6 +18,7 @@ const buildTimestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStar
 const version = `${majorVersion}+${buildTimestamp}`
 
 const backendPort = process.env.BACKEND_PORT || '8000'
+const automationTarget = process.env.AUTOMATION_DEV_URL || 'http://127.0.0.1:18128'
 
 export default defineConfig({
     plugins: [react()],
@@ -45,6 +46,8 @@ export default defineConfig({
         port: 3008,
         host: '0.0.0.0',
         proxy: {
+            '/api/automations': { target: automationTarget, changeOrigin: true },
+            '/api/automation-mcp': { target: automationTarget, changeOrigin: true, timeout: 185000 },
             '/api': {
                 target: `http://localhost:${backendPort}`,
                 changeOrigin: true,

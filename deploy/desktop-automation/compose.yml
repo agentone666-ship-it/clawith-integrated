@@ -1,0 +1,29 @@
+services:
+  desktop-automation:
+    image: ${AUTOMATION_IMAGE:-clawith-desktop-automation:local}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ${AUTOMATION_ENV_FILE:?Set a private env file with existing Clawith DB and auth settings}
+    environment:
+      AUTOMATION_DRIVER_TOKEN_FILE: /run/automation/driver-token
+      AUTOMATION_SIGNING_KEY_FILE: /run/automation/signing-key
+      AUTOMATION_EVIDENCE_DIR: /data/desktop-automation
+    volumes:
+      - ${CUA_DRIVER_TOKEN_PATH:?Set the Cua bridge token path}:/run/automation/driver-token:ro
+      - ${AUTOMATION_SIGNING_KEY_PATH:?Set the feature signing key path}:/run/automation/signing-key:ro
+      - ${AUTOMATION_EVIDENCE_PATH:?Set the private evidence directory}:/data/desktop-automation
+    ports:
+      - 127.0.0.1:18128:8080
+    cpus: 1.5
+    mem_limit: 1g
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks:
+      clawith:
+        aliases: [clawith-desktop-automation]
+networks:
+  clawith:
+    external: true
+    name: ${CLAWITH_NETWORK:-clawith_yaojin_network}

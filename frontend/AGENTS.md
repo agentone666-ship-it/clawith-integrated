@@ -49,3 +49,7 @@ From `frontend/` directory:
 ## 5. Lifecycle Ownership
 
 Frontend-specific lifecycle ownership and cleanup rules will be defined here.
+
+## Desktop automation
+
+The native workflow page is owned by [desktop automation](../docs/agent-notes/desktop-automation.md). Keep recording, draft editing, executions and immutable version management in the same workflow context. Use the existing authenticated request wrapper. Record only actions sent through the isolated desktop panel; do not imply that global desktop hooks or semantic layout recovery exist.

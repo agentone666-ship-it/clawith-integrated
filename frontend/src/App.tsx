@@ -24,6 +24,7 @@ const OAuthCallback = lazy(() => import('./pages/OAuthCallback'));
 const SSOEntry = lazy(() => import('./pages/SSOEntry'));
 const OKR = lazy(() => import('./pages/OKR'));
 const GroupsPage = lazy(() => import('./pages/groups/GroupsPage'));
+const AutomationStudio = lazy(() => import('./pages/automations/AutomationStudio').then(module => ({ default: module.AutomationStudio })));
 const EmployeeStudio = lazy(() => import('./pages/employee-studio/EmployeeStudio').then(module => ({ default: module.EmployeeStudio })));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -287,6 +288,7 @@ export default function App() {
                     <Route index element={<Navigate to="/dashboard" replace />} />
                     <Route path="dashboard" element={<><EmployeeStudioEntry /><Dashboard /></>} />
                     <Route path="employee-studio" element={<EmployeeStudio />} />
+                    <Route path="automations" element={<AutomationStudio />} />
                     <Route path="plaza" element={<Plaza />} />
                     <Route path="agents/new" element={<AgentCreate />} />
                     <Route path="agents/:id" element={<Navigate to="chat" replace />} />

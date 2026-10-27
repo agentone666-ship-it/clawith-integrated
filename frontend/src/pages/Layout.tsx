@@ -1053,6 +1053,7 @@ export default function Layout() {
                             <span className="sidebar-item-icon" style={{ display: 'flex' }}>{SidebarIcons.home}</span>
                             <span className="sidebar-item-text">{t('nav.dashboard')}</span>
                         </NavLink>
+                        <NavLink to="/automations" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}><span className="sidebar-item-icon">▣</span><span className="sidebar-item-text">{t('nav.automations', '桌面自动化')}</span></NavLink>
                         <NavLink to="/okr" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
                             <span className="sidebar-item-icon" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                                 {/* OKR target icon */}

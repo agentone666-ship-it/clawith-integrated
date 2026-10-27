@@ -1,0 +1,81 @@
+import { operationId } from "./contracts";
+import { request } from "../../api/request";
+import type {
+  Workflow,
+  WorkflowSummary,
+  Script,
+  Recording,
+  Frame,
+  Step,
+  ActionResult,
+  Run,
+  Version,
+} from "./contracts";
+const base = "/automations";
+const post = <T>(path: string, value: unknown = {}) =>
+  request<T>(base + path, { method: "POST", body: JSON.stringify(value) });
+export const automationApi = {
+  list: () => request<WorkflowSummary[]>(base),
+  create: (name: string, description: string) =>
+    post<Workflow>("", { name, description }),
+  detail: (id: string) => request<Workflow>(base + "/" + id),
+  save: (w: Workflow, script: Script) =>
+    request<Workflow>(base + "/" + w.id, {
+      method: "PUT",
+      body: JSON.stringify({
+        name: w.name,
+        description: w.description,
+        revision: w.revision,
+        script,
+      }),
+    }),
+  record: (w: Workflow) =>
+    post<Recording>("/" + w.id + "/recordings", { revision: w.revision }),
+  frame: (id: string) => request<Frame>(base + "/recordings/" + id + "/frame"),
+  action: (
+    id: string,
+    step: Step,
+    parameter_name = "",
+    parameter_label = "",
+    secret = false,
+  ) =>
+    post<ActionResult>("/recordings/" + id + "/actions", {
+      request_id: operationId(),
+      step,
+      parameter_name,
+      parameter_label,
+      secret,
+    }),
+  pause: (r: Recording) =>
+    post<Recording>("/recordings/" + r.id + "/pause", { paused: !r.paused }),
+  stop: (id: string) => post<Recording>("/recordings/" + id + "/stop"),
+  test: (
+    id: string,
+    inputs: Record<string, string>,
+    version_id: string | null = null,
+  ) =>
+    post<Run>("/" + id + "/test", {
+      inputs,
+      request_id: operationId(),
+      version_id,
+    }),
+  run: (id: string) => request<Run>(base + "/runs/" + id + "/status"),
+  evidence: (id: string) =>
+    request<{ image: string; mime: string }>(
+      base + "/runs/" + id + "/evidence",
+    ),
+  cancel: (id: string) => post<Run>("/runs/" + id + "/cancel"),
+  publish: (w: Workflow, note: string) =>
+    post<{ number: number; version_id: string; tool_id: string }>(
+      "/" + w.id + "/versions",
+      { revision: w.revision, note },
+    ),
+  version: (id: string, version: string) =>
+    request<Version>(base + "/" + id + "/versions/" + version),
+  restore: (w: Workflow, version: string) =>
+    post("/" + w.id + "/versions/" + version + "/restore", {
+      revision: w.revision,
+    }),
+  bind: (id: string, version: string, agent_id: string) =>
+    post("/" + id + "/versions/" + version + "/bind", { agent_id }),
+};

@@ -173,3 +173,7 @@ operation bound.
 Test limits below, at, and above the boundary, including one oversized item and
 multi-byte text where byte limits apply. Reject or truncate only according to
 the owning contract, and report truncation explicitly.
+
+## Desktop automation ownership
+
+For recorded desktop workflows, read [the owning note](../docs/agent-notes/desktop-automation.md). Keep workflow lifecycle and provider adaptation in `app/services/desktop_automation`; APIs remain transport-only. The standalone capability has its own Alembic stream and must not mutate the Runtime migration head. Published MCP calls must validate real Runtime identity and assignment before reserving the desktop.
