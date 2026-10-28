@@ -40,12 +40,6 @@ export interface PythonScript {
   secret_parameters: string[];
 }
 export type Script = RpaScript | PythonScript;
-export interface RegistryStatus {
-  tool_id: string | null;
-  enabled: boolean;
-  name: string;
-  sdk: string;
-}
 export interface WorkflowSummary {
   kind: "rpa" | "python";
   id: string;

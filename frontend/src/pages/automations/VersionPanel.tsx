@@ -1,6 +1,4 @@
-import { useEffect, useState } from "react";
-import { agentApi } from "../../services/api";
-import type { Agent } from "../../types";
+import { useState } from "react";
 import type { Version, Workflow } from "./contracts";
 import { automationApi } from "./api";
 interface Props {
@@ -11,27 +9,11 @@ interface Props {
 export function VersionPanel({ workflow, onChanged, onError }: Props) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [agent, setAgent] = useState("");
   const [selected, setSelected] = useState<Version | null>(null);
   const [notice, setNotice] = useState("");
-  useEffect(() => {
-    let stopped = false;
-    void agentApi
-      .list()
-      .then((a) => {
-        if (!stopped) setAgents(a);
-      })
-      .catch((e) => {
-        if (!stopped) onError(e instanceof Error ? e.message : "无法读取员工");
-      });
-    return () => {
-      stopped = true;
-    };
-  }, [onError]);
   const perform = async (action: () => Promise<unknown>, message: string) => {
     setBusy(true);
-    onError('');
+    onError("");
     try {
       await action();
       setNotice(message);
@@ -45,9 +27,10 @@ export function VersionPanel({ workflow, onChanged, onError }: Props) {
   return (
     <section>
       <div className="auto-card">
-        <h3>发布为 Agent Tool</h3>
+        <h3>发布版本</h3>
         <p className="auto-hint">
-          当前草稿必须完成结果验证并试运行通过。每个发布版本保持不变，发布新版不会自动升级已有员工绑定。
+          当前草稿必须完成结果验证并试运行通过。发布后自动注册为
+          Tool，请到数字员工的 Tool 中统一管理。每个版本保持不变。
         </p>
         <div className="auto-row">
           <input
@@ -62,7 +45,7 @@ export function VersionPanel({ workflow, onChanged, onError }: Props) {
             onClick={() =>
               void perform(
                 () => automationApi.publish(workflow, note),
-                "版本已发布，可绑定给员工调用。",
+                "版本已发布，可在数字员工的 Tool 中启用。",
               )
             }
           >
@@ -77,21 +60,6 @@ export function VersionPanel({ workflow, onChanged, onError }: Props) {
       )}
       <div className="auto-toolbar">
         <h3>版本历史</h3>
-        <span className="auto-spacer" />
-        <select
-          aria-label="绑定版本的员工"
-          value={agent}
-          onChange={(e) => setAgent(e.target.value)}
-        >
-          <option value="">选择要绑定的员工…</option>
-          {agents
-            .filter((a) => a.agent_type === "native")
-            .map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-        </select>
       </div>
       {!workflow.versions.length && (
         <div className="auto-empty">
@@ -139,18 +107,6 @@ export function VersionPanel({ workflow, onChanged, onError }: Props) {
               }}
             >
               恢复为草稿
-            </button>
-            <button
-              className="btn"
-              disabled={busy || !agent}
-              onClick={() =>
-                void perform(
-                  () => automationApi.bind(workflow.id, v.id, agent),
-                  `员工已绑定 v${v.number}，其他工具不受影响。`,
-                )
-              }
-            >
-              绑定给所选员工
             </button>
           </div>
         </article>

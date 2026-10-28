@@ -23,12 +23,19 @@ The same workflow library now owns `clawith.python.v1` source alongside recorded
 `clawith.cua.v1` steps. The type is derived from its persisted source contract.
 The browser selects RPA recording or Python editing at creation. Recording cannot
 replace a Python draft. Draft revision, trial history, immutable releases,
-version restore and ordinary Agent Tool bindings have one shared owner.
+and version restore share the automation lifecycle. User-facing Tool assignment,
+enabling and configuration belong exclusively to the digital employee Tool tab.
+The automation page has no Agent access dialog, employee selector or bind action;
+publishing registers the Tool, then users manage it through the existing employee
+Tool list. The management Tool is listed as 桌面自动化管理, and execution Tools
+use the workflow name and immutable version. Existing programmatic bindings and
+execution authorization remain supported.
 
 `AutomationRegistry` owns manager operations. Its opt-in `automation_registry`
 MCP Tool supports `sdk`, `list`, `get`, `version`, `observe`, `create`, `update`,
-`test`, `run_status`, `publish`, `bind` and `execute`. UI administrators enable and
-assign it through `/api/automations/registry` and `/registry/bind`. Never enable it
+`test`, `run_status`, `publish`, `bind` and `execute`. The registry bootstrap and programmatic assignment endpoints remain capability
+integration APIs; browser assignment uses the shared `/api/tools/agents/{id}`
+Tool management API from the digital employee page. Never enable it
 by default on business employees. A management call verifies an actual held Run,
 matching Agent/tenant, enabled Tool/assignment, and active `origin_user_id`.
 Workflow access and Agent configuration use that origin user's existing policy,
@@ -160,3 +167,22 @@ Pyright, frontend TypeScript/ESLint and the deployment-baseline production build
 A pre-existing Pydantic deprecation warning remains in sandbox config. Raw
 non-credential evidence is retained in the task's `registry-*.json` and screenshots,
 with server copies under its existing studio deployment directory.
+
+
+### Tool UI ownership correction
+
+The desktop automation page now owns source/recording, trials, evidence and
+version publication only. Tool assignment controls have been removed from both
+the page header and version history. The unused Agent access component and its
+frontend assignment clients are deleted. Publication continues registering an
+ordinary Tool, so the existing digital employee Tool tab can discover, enable,
+disable and configure both the registry Tool and every released execution Tool.
+The UI change does not alter current assignments or remove Agent-driven
+programmatic publication/assignment consumers.
+
+The correction was deployed to the conservative development frontend overlay.
+TypeScript, automation-page ESLint and the production build passed. A headless
+browser verified the absence of binding controls and then searched, toggled and
+reloaded both the management Tool and a published execution Tool in the existing
+employee Tool tab. Both assignments persisted through the shared Tool API, with
+no page errors. The temporary verification employee and browser were removed.

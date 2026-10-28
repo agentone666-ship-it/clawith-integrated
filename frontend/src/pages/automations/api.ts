@@ -10,7 +10,6 @@ import type {
   ActionResult,
   Run,
   Version,
-  RegistryStatus,
 } from "./contracts";
 const base = "/automations";
 const post = <T>(path: string, value: unknown = {}) =>
@@ -19,9 +18,6 @@ export const automationApi = {
   list: () => request<WorkflowSummary[]>(base),
   create: (name: string, description: string, script?: Script) =>
     post<Workflow>("", { name, description, script }),
-  registry: () => request<RegistryStatus>(base + "/registry"),
-  registerManager: () => post<RegistryStatus>("/registry"),
-  bindManager: (agent_id: string) => post("/registry/bind", { agent_id }),
   detail: (id: string) => request<Workflow>(base + "/" + id),
   save: (w: Workflow, script: Script) =>
     request<Workflow>(base + "/" + w.id, {
@@ -80,6 +76,4 @@ export const automationApi = {
     post("/" + w.id + "/versions/" + version + "/restore", {
       revision: w.revision,
     }),
-  bind: (id: string, version: string, agent_id: string) =>
-    post("/" + id + "/versions/" + version + "/bind", { agent_id }),
 };

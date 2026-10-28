@@ -8,7 +8,6 @@ import { RunPanel } from "./RunPanel";
 import { VersionPanel } from "./VersionPanel";
 import { PythonEditor } from "./PythonEditor";
 import { emptyPython } from "./contracts";
-import { AgentAccess } from "./AgentAccess";
 import "./studio.css";
 import "./responsive.css";
 
@@ -17,7 +16,7 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "record", label: "录制工作台" },
   { id: "edit", label: "步骤与参数" },
   { id: "runs", label: "试运行与记录" },
-  { id: "versions", label: "版本与 Tool" },
+  { id: "versions", label: "版本与发布" },
 ];
 
 export function AutomationStudio() {
@@ -33,7 +32,6 @@ export function AutomationStudio() {
   const [tab, setTab] = useState<Tab>("record");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [showAccess, setShowAccess] = useState(false);
   const [createKind, setCreateKind] = useState<"rpa" | "python">("rpa");
   const [filter, setFilter] = useState("all");
   const [creating, setCreating] = useState(false);
@@ -159,13 +157,11 @@ export function AutomationStudio() {
           <span className="auto-eyebrow">AUTOMATION STUDIO</span>
           <h1>桌面自动化</h1>
           <p>
-            统一托管 RPA 与 Agent 编写的脚本，测试后发布为员工可调用的 Tool。
+            统一托管 RPA 与 Agent 编写的脚本。发布后，在数字员工的 Tool
+            中统一启用与配置。
           </p>
         </div>
         <div className="auto-row">
-          <button className="btn" onClick={() => setShowAccess(true)}>
-            Agent 接入
-          </button>
           <button className="btn btn-primary" onClick={() => setCreating(true)}>
             ＋ 新建自动化
           </button>
@@ -186,9 +182,6 @@ export function AutomationStudio() {
             ×
           </button>
         </div>
-      )}
-      {showAccess && (
-        <AgentAccess onClose={() => setShowAccess(false)} onError={onError} />
       )}
       <div className="auto-workspace">
         <aside className="auto-library">

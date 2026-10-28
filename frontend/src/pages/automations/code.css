@@ -13,12 +13,6 @@
   border-radius: 10px;
   tab-size: 4;
 }
-.auto-shell .auto-sdk {
-  white-space: pre-wrap;
-  max-height: 320px;
-  overflow: auto;
-  font-size: 12px;
-}
 .auto-shell .auto-library > select {
   width: 100%;
   margin-top: 10px;
