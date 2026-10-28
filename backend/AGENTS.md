@@ -182,3 +182,7 @@ For bulk employee configuration, `core/agent_management_scope.py` is the batched
 SQL companion to `can_manage_agent`. Both use the same tenant, active-account,
 creator, private-mode and explicit-manage rules. Keep their contract aligned;
 capabilities must not use visibility/use permission as configuration authority.
+
+The authoring handoff readiness endpoint is a read-only projection of the same
+management scope plus global and per-employee Tool enablement. It must never
+install, grant, create workflows, reserve desktops or dispatch messages.

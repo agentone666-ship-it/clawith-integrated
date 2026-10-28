@@ -214,3 +214,36 @@ it and enabled the Tool for two isolated test employees. Independent AgentTool
 readback confirmed both assignments, the third employee retaining v1, unchanged
 unrelated Tools, no extra rows on replay, and no partial changes for a mixed
 invalid batch. Runtime backend container was not replaced.
+
+
+### Coding-Agent authoring handoff (2026-10-28)
+
+A persistent library entry and the Python creation dialog open a three-step guide:
+check a manageable native employee's actual `automation_registry` readiness,
+structure a business brief, then copy an explicit creation task and open that
+employee's chat. Readiness uses the same central SQL management scope as version
+allocation, filters native employees, and bounds/literal-searches each page. It
+is read-only: no installation, permission grants, chat sends, desktop dispatches,
+or script mutations occur when using this guide. Tool configuration remains in
+the employee Tool tab.
+
+The generated task requires the current SDK and an actual `create` operation with
+a native script object, name and description, and a real workflow/revision/link
+receipt. Chat-only code is not submission. The default scope is draft-only;
+explicit optional trial/publication requires test data, real verification and a
+bounded repair loop, without automatic employee assignment. An existing workflow
+can be read as a reference but must not be overwritten. External Codex/Cursor
+users receive the separate manual Python-editor route: their chat does not
+possess a Clawith Run identity.
+
+Verification: 53 focused backend tests passed (including five guide cases),
+plus the generated-task contract test, Ruff, targeted Pyright, frontend
+TypeScript/ESLint and the conservative frontend production build. Live server
+headless acceptance checked readiness denial/refresh, employee Tool/chat links,
+business example/required fields, draft-only native-create prompt, read-only
+reference, LAN HTTP copy, explicit test-data guard, library return and external
+manual Python entry. Wide/narrow screenshots were inspected. No automation
+mutation or chat send occurred during the guide acceptance, and the main Runtime
+container remained unchanged. This proves the guide and handoff contract, not a
+new model-authored business execution. Previously-ready coding employees sort
+first so a new user can discover them without knowing their names.

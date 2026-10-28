@@ -6,6 +6,7 @@ import { RecordingPanel } from "./RecordingPanel";
 import { ScriptEditor } from "./ScriptEditor";
 import { RunPanel } from "./RunPanel";
 import { VersionPanel } from "./VersionPanel";
+import { AgentAuthoringGuide } from "./AgentAuthoringGuide";
 import { PythonEditor } from "./PythonEditor";
 import { emptyPython } from "./contracts";
 import "./studio.css";
@@ -34,6 +35,7 @@ export function AutomationStudio() {
   const [busy, setBusy] = useState(false);
   const [createKind, setCreateKind] = useState<"rpa" | "python">("rpa");
   const [filter, setFilter] = useState("all");
+  const [authoring, setAuthoring] = useState(false);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -162,11 +164,40 @@ export function AutomationStudio() {
           </p>
         </div>
         <div className="auto-row">
+          <button className="btn" onClick={() => setAuthoring(true)}>
+            让 coding agent 写脚本
+          </button>
           <button className="btn btn-primary" onClick={() => setCreating(true)}>
             ＋ 新建自动化
           </button>
         </div>
       </header>
+      <div className="auto-authoring-banner">
+        <div>
+          <strong>不知道怎么把 Agent 写的脚本提交到这里？</strong>
+          <p>跟着引导检查 Tool、描述固定流程，再把任务复制给 coding agent。</p>
+        </div>
+        <button className="btn" onClick={() => setAuthoring(true)}>
+          开始编写引导
+        </button>
+      </div>
+      {authoring && (
+        <AgentAuthoringGuide
+          workflow={workflow}
+          onClose={() => setAuthoring(false)}
+          onManual={() => {
+            setAuthoring(false);
+            setCreateKind("python");
+            setCreating(true);
+          }}
+          onFind={async (name) => {
+            await refreshList();
+            setFilter("all");
+            setSearch(name);
+            setAuthoring(false);
+          }}
+        />
+      )}
       {error && (
         <div className="auto-error-banner" role="alert">
           {error}
@@ -367,6 +398,20 @@ export function AutomationStudio() {
                 </option>
               </select>
             </label>
+            {createKind === "python" && (
+              <p className="auto-hint">
+                不想自己写？
+                <button
+                  className="btn"
+                  onClick={() => {
+                    setCreating(false);
+                    setAuthoring(true);
+                  }}
+                >
+                  让 coding agent 编写并提交
+                </button>
+              </p>
+            )}
             <label>
               流程名称
               <input

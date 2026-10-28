@@ -107,6 +107,13 @@ async def registry_bind(req: Request, body: Bind, user: CurrentUser, db: DBSessi
     return await req.app.state.automation_registry.bind_manager(db, user, body.agent_id)
 
 
+@router.get("/authoring")
+async def authoring_guide(req: Request, user: CurrentUser, db: DBSession, search: str = "", offset: int = 0):
+    from app.services.desktop_automation.authoring import AuthoringGuide
+
+    return await AuthoringGuide(req.app.state.automation_registry).readiness(db, user, search, offset)
+
+
 @router.get("/{ident}")
 async def detail(req: Request, ident: uuid.UUID, user: CurrentUser, db: DBSession):
     return await capability(req).detail(db, user, ident)

@@ -12,11 +12,18 @@ import type {
   Version,
   AssignmentPage,
   AssignmentResult,
+  AuthoringReadiness,
 } from "./contracts";
 const base = "/automations";
 const post = <T>(path: string, value: unknown = {}) =>
   request<T>(base + path, { method: "POST", body: JSON.stringify(value) });
 export const automationApi = {
+  authoring: (search: string, offset: number) =>
+    request<AuthoringReadiness>(
+      base +
+        "/authoring?" +
+        new URLSearchParams({ search, offset: String(offset) }),
+    ),
   list: () => request<WorkflowSummary[]>(base),
   create: (name: string, description: string, script?: Script) =>
     post<Workflow>("", { name, description, script }),

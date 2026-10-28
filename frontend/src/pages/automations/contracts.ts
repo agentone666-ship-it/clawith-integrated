@@ -199,3 +199,17 @@ export interface AssignmentResult {
   unchanged_count: number;
   agents: { id: string; name: string }[];
 }
+
+export interface AuthoringAgent {
+  id: string;
+  name: string;
+  assigned: boolean;
+  ready: boolean;
+}
+export interface AuthoringReadiness {
+  manager: { tool_id: string | null; enabled: boolean; name: string };
+  items: AuthoringAgent[];
+  total: number;
+  offset: number;
+  next_offset: number | null;
+}
