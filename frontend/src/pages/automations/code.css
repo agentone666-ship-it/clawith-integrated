@@ -7,8 +7,8 @@
     SFMono-Regular,
     Consolas,
     monospace;
-  background: #101a2d;
-  color: #dce8f8;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
   padding: 18px;
   border-radius: 10px;
   tab-size: 4;

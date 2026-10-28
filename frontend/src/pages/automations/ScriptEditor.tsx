@@ -36,7 +36,7 @@ export function ScriptEditor({ script, onChange, onSave, busy }: Props) {
         </strong>
         <span className="auto-spacer" />
         <button
-          className="btn"
+          className="btn btn-secondary"
           onClick={() => {
             setAdvanced(!advanced);
             setJson(JSON.stringify(script, null, 2));
@@ -62,7 +62,7 @@ export function ScriptEditor({ script, onChange, onSave, busy }: Props) {
             onChange={(e) => setJson(e.target.value)}
           />
           <button
-            className="btn"
+            className="btn btn-secondary"
             onClick={() => {
               try {
                 const parsed: RpaScript = JSON.parse(json) as RpaScript;
@@ -182,7 +182,7 @@ export function ScriptEditor({ script, onChange, onSave, busy }: Props) {
             </article>
           ))}
           <button
-            className="btn"
+            className="btn btn-secondary"
             onClick={() => {
               const target = [...script.steps]
                 .reverse()

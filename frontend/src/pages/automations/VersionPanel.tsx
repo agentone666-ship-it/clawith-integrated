@@ -111,7 +111,7 @@ export function VersionPanel({ workflow, onChanged, onError }: Props) {
               分配给员工
             </button>
             <button
-              className="btn"
+              className="btn btn-secondary"
               onClick={() => {
                 void automationApi
                   .version(workflow.id, v.id)
@@ -124,7 +124,7 @@ export function VersionPanel({ workflow, onChanged, onError }: Props) {
               与当前草稿对比
             </button>
             <button
-              className="btn"
+              className="btn btn-secondary"
               disabled={busy || !!workflow.recording}
               onClick={() => {
                 if (
@@ -158,7 +158,10 @@ export function VersionPanel({ workflow, onChanged, onError }: Props) {
           <div className="auto-row">
             <h3>v{selected.number} 与当前草稿</h3>
             <span className="auto-spacer" />
-            <button className="btn" onClick={() => setSelected(null)}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setSelected(null)}
+            >
               关闭
             </button>
           </div>

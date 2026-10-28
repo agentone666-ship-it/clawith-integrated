@@ -136,7 +136,7 @@ export function ToolAssignmentDialog({
           </h2>
           <span className="auto-spacer" />
           <button
-            className="btn"
+            className="btn btn-secondary"
             aria-label="关闭分配引导"
             disabled={busy}
             onClick={onClose}
@@ -195,7 +195,7 @@ export function ToolAssignmentDialog({
         />
         <div className="auto-row auto-assignment-tools">
           <button
-            className="btn"
+            className="btn btn-secondary"
             disabled={loading || busy || !eligible.length}
             onClick={handleSelectPage}
           >
@@ -204,7 +204,7 @@ export function ToolAssignmentDialog({
           <span>本次选择 {selected.length}/100 名</span>
           <span className="auto-spacer" />
           <button
-            className="btn"
+            className="btn btn-secondary"
             disabled={!selected.length || busy}
             onClick={() => setSelected([])}
           >
@@ -214,7 +214,11 @@ export function ToolAssignmentDialog({
         {error && (
           <div className="auto-error" role="alert">
             {error}{" "}
-            <button className="btn" disabled={busy} onClick={handleReload}>
+            <button
+              className="btn btn-secondary"
+              disabled={busy}
+              onClick={handleReload}
+            >
               刷新员工状态
             </button>
           </div>
@@ -254,7 +258,7 @@ export function ToolAssignmentDialog({
           <span className="auto-hint">共 {page?.total || 0} 名可管理员工</span>
           <span className="auto-spacer" />
           <button
-            className="btn"
+            className="btn btn-secondary"
             disabled={busy || loading || offset === 0}
             onClick={() => {
               setOffset(Math.max(0, offset - 50));
@@ -264,7 +268,7 @@ export function ToolAssignmentDialog({
             上一页
           </button>
           <button
-            className="btn"
+            className="btn btn-secondary"
             disabled={busy || loading || page?.next_offset == null}
             onClick={() => {
               if (page?.next_offset != null) {
@@ -281,7 +285,11 @@ export function ToolAssignmentDialog({
           保持原设置；以后发布新版，也不会自动升级已有绑定。
         </p>
         <div className="auto-row">
-          <button className="btn" disabled={busy} onClick={onClose}>
+          <button
+            className="btn btn-secondary"
+            disabled={busy}
+            onClick={onClose}
+          >
             {published && !result ? "稍后分配" : "完成"}
           </button>
           <span className="auto-spacer" />

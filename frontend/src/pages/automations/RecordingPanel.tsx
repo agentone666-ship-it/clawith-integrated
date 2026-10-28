@@ -187,7 +187,7 @@ export function RecordingPanel({
               {recording.script.steps.length} 步
             </span>
             <button
-              className="btn"
+              className="btn btn-secondary"
               onClick={() => void handlePause()}
               disabled={busy}
             >
@@ -348,7 +348,7 @@ export function RecordingPanel({
                 敏感参数
               </label>
               <button
-                className="btn"
+                className="btn btn-secondary"
                 disabled={busy || !text || (secret && !parameter)}
                 onClick={() => {
                   void send(
@@ -435,7 +435,7 @@ export function RecordingPanel({
               placeholder="如 保存成功、草稿编号或 ${order_id}"
             />
             <button
-              className="btn"
+              className="btn btn-secondary"
               disabled={busy || !expected || !selectedTarget}
               onClick={() =>
                 void send(

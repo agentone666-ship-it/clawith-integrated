@@ -156,7 +156,6 @@ export function AutomationStudio() {
     <div className="auto-shell">
       <header className="auto-page-header">
         <div>
-          <span className="auto-eyebrow">AUTOMATION STUDIO</span>
           <h1>桌面自动化</h1>
           <p>
             统一托管 RPA 与 Agent 编写的脚本。测试后独立发布
@@ -164,32 +163,21 @@ export function AutomationStudio() {
           </p>
         </div>
         <div className="auto-row">
-          <button className="btn" onClick={() => setAuthoring(true)}>
-            交给 Agent 写脚本
+          <button
+            className="btn btn-secondary"
+            onClick={() => setAuthoring(true)}
+          >
+            编写脚本
           </button>
           <button className="btn btn-primary" onClick={() => setCreating(true)}>
             ＋ 新建自动化
           </button>
         </div>
       </header>
-      <div className="auto-authoring-banner">
-        <div>
-          <strong>只说业务需求，脚本交给 Agent</strong>
-          <p>Agent 按工作规范完成编写、入库和验证，不用填写技术配置。</p>
-        </div>
-        <button className="btn" onClick={() => setAuthoring(true)}>
-          让 Agent 来完成
-        </button>
-      </div>
       {authoring && (
         <AgentAuthoringGuide
           workflow={workflow}
           onClose={() => setAuthoring(false)}
-          onManual={() => {
-            setAuthoring(false);
-            setCreateKind("python");
-            setCreating(true);
-          }}
         />
       )}
       {error && (
@@ -396,13 +384,13 @@ export function AutomationStudio() {
               <p className="auto-hint">
                 不想自己写？
                 <button
-                  className="btn"
+                  className="btn btn-secondary"
                   onClick={() => {
                     setCreating(false);
                     setAuthoring(true);
                   }}
                 >
-                  交给 Agent 写脚本
+                  编写脚本
                 </button>
               </p>
             )}
@@ -429,7 +417,10 @@ export function AutomationStudio() {
             </label>
             <div className="auto-row">
               <span className="auto-spacer" />
-              <button className="btn" onClick={() => setCreating(false)}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setCreating(false)}
+              >
                 取消
               </button>
               <button

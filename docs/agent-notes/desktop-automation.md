@@ -282,3 +282,28 @@ automation mutations, and wide/narrow layout. Screenshots were inspected. The
 main Runtime and isolated Windows/compile provider were not replaced. This
 validates spec delivery and UI simplification; no new model/business run was
 claimed for this change.
+
+
+### Product UI and composer handoff correction (2026-10-28)
+
+The extra business field and repeated banner are removed. The compact entry has
+Start and Copy actions; Copy uses the exact server Markdown, with feedback. Start
+passes specification/context via generic `composerHandoff` route state to the
+existing chat composer, without a clipboard dependency or auto-send. The generic
+chat hook appends to existing text, consumes once, clears route state and rejects
+wrong-agent, older-than-five-minutes or over-24-KiB drafts. No server conversation
+state, credential transfer or new runtime was added.
+
+Desktop automation now uses the product accent/background/text/border tokens
+and existing global button styles, including its source editor and allocation
+dialog. Duplicate promotional chrome is removed. Component choices and official
+source links are recorded in `docs/interaction-patterns.md`.
+
+Verification for this correction: focused composer/prompt tests (3), frontend
+TypeScript, automation and handoff-hook ESLint, and the production overlay build
+passed. Live server headless acceptance verified no business field, exact spec
+copy with feedback, real chat textarea population, one-time route-state
+consumption, no automatic network/WebSocket submission, short labels, Escape
+close, removal of the duplicate CTA, and light/dark/narrow rendering. Screenshots
+were inspected. Only the frontend was updated; no Runtime or desktop execution
+was started for this UI task.

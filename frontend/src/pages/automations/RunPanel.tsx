@@ -147,7 +147,7 @@ export function RunPanel({
             <div className="auto-row">
               {run.status === "running" && (
                 <button
-                  className="btn"
+                  className="btn btn-secondary"
                   disabled={run.cancel_requested}
                   onClick={() => {
                     void automationApi
@@ -165,7 +165,7 @@ export function RunPanel({
               )}
               {run.result.evidence && (
                 <button
-                  className="btn"
+                  className="btn btn-secondary"
                   onClick={() => {
                     void automationApi
                       .evidence(run.id)

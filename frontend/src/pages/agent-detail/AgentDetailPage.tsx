@@ -61,6 +61,7 @@ import SettingsTab from './tabs/SettingsTab';
 import SkillsTab from './tabs/SkillsTab';
 import ToolsTab from './tabs/ToolsTab';
 import AgentDirectory from './AgentDirectory';
+import { useComposerHandoff } from './hooks/useComposerHandoff';
 import { useAgentDetailRoute } from './hooks/useAgentDetailRoute';
 import {
     activeRunForSession,
@@ -3020,6 +3021,7 @@ export default function AgentDetailPage() {
     const chatContainerRef = useRef<HTMLDivElement>(null);
     const chatHistorySentinelRef = useRef<HTMLDivElement>(null);
     const chatInputRef = useRef<HTMLTextAreaElement>(null);
+    useComposerHandoff(id, setChatInput, chatInputRef);
     const chatInputAreaRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 

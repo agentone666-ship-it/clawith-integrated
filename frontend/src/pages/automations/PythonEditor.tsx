@@ -53,7 +53,7 @@ ui.assert_text(inputs["text"], target=w, timeout_seconds=8)`}</pre>
           <h3>输入参数</h3>
           <span className="auto-spacer" />
           <button
-            className="btn"
+            className="btn btn-secondary"
             onClick={() => {
               let n = 1;
               while (`param${n}` in script.parameters) n++;
@@ -124,7 +124,7 @@ ui.assert_text(inputs["text"], target=w, timeout_seconds=8)`}</pre>
               敏感
             </label>
             <button
-              className="btn"
+              className="btn btn-secondary"
               onClick={() => {
                 const parameters = { ...script.parameters };
                 delete parameters[key];
