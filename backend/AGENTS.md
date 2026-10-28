@@ -177,3 +177,8 @@ the owning contract, and report truncation explicitly.
 ## Desktop automation ownership
 
 For recorded RPA and Agent-authored Python desktop workflows, read [the owning note](../docs/agent-notes/desktop-automation.md). Keep workflow lifecycle and provider adaptation in `app/services/desktop_automation`; APIs remain transport-only. The standalone capability has its own Alembic stream and must not mutate the Runtime migration head. Published and management MCP calls must validate real Runtime identity and assignment before reserving the desktop. Management operations act as the active Run origin user. Python runs only in the isolated compiler provider and publishes only after an exact-source successful trial; the main Runtime must never execute hosted source or receive a Docker socket.
+
+For bulk employee configuration, `core/agent_management_scope.py` is the batched
+SQL companion to `can_manage_agent`. Both use the same tenant, active-account,
+creator, private-mode and explicit-manage rules. Keep their contract aligned;
+capabilities must not use visibility/use permission as configuration authority.

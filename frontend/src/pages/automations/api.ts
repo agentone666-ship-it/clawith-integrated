@@ -10,6 +10,8 @@ import type {
   ActionResult,
   Run,
   Version,
+  AssignmentPage,
+  AssignmentResult,
 } from "./contracts";
 const base = "/automations";
 const post = <T>(path: string, value: unknown = {}) =>
@@ -72,6 +74,25 @@ export const automationApi = {
     ),
   version: (id: string, version: string) =>
     request<Version>(base + "/" + id + "/versions/" + version),
+  assignmentCandidates: (
+    id: string,
+    version: string,
+    search: string,
+    offset: number,
+  ) =>
+    request<AssignmentPage>(
+      base +
+        "/" +
+        id +
+        "/versions/" +
+        version +
+        "/agents?" +
+        new URLSearchParams({ search, offset: String(offset) }),
+    ),
+  assign: (id: string, version: string, agent_ids: string[]) =>
+    post<AssignmentResult>("/" + id + "/versions/" + version + "/assignments", {
+      agent_ids,
+    }),
   restore: (w: Workflow, version: string) =>
     post("/" + w.id + "/versions/" + version + "/restore", {
       revision: w.revision,

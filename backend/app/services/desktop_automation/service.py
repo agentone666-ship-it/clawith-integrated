@@ -284,28 +284,14 @@ class AutomationService:
     async def bind(
         self, db: AsyncSession, user: User, ident: uuid.UUID, version_id: uuid.UUID, agent_id: uuid.UUID
     ) -> dict:
-        from app.core.permissions import can_manage_agent
-        from app.models.agent import Agent
+        from .assignments import VersionAssignments
 
-        v = await self.version(db, user, ident, version_id)
-        agent = await db.get(Agent, agent_id)
-        if agent is None or agent.tenant_id != user.tenant_id or not await can_manage_agent(db, user, agent):
-            fail(403, "You cannot configure this agent")
-        if not v.tool_id:
-            fail(409, "Version has no published Tool")
-        related = select(Version.tool_id).where(Version.workflow_id == ident, Version.tenant_id == user.tenant_id)
-        rows = (
-            (await db.execute(select(AgentTool).where(AgentTool.agent_id == agent_id, AgentTool.tool_id.in_(related))))
-            .scalars()
-            .all()
-        )
-        found = False
-        for row in rows:
-            row.enabled = row.tool_id == v.tool_id
-            found |= row.enabled
-        if not found:
-            db.add(AgentTool(agent_id=agent_id, tool_id=v.tool_id, enabled=True, config={}, source="user_installed"))
-        return {"agent_id": str(agent_id), "version_id": str(v.id), "tool_id": str(v.tool_id)}
+        await VersionAssignments(self).assign(db, user, ident, version_id, [agent_id])
+        return {
+            "agent_id": str(agent_id),
+            "version_id": str(version_id),
+            "tool_id": str((await self.version(db, user, ident, version_id)).tool_id),
+        }
 
     async def assert_desktop_idle(
         self, db: AsyncSession, *, ignore_playback: uuid.UUID | None = None, ignore_agent_run: uuid.UUID | None = None

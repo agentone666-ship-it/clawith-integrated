@@ -71,6 +71,11 @@ class Bind(BaseModel):
     agent_id: uuid.UUID
 
 
+class BatchBind(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    agent_ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
+
+
 def capability(req: Request):
     return req.app.state.desktop_automation
 
@@ -192,3 +197,29 @@ async def restore(
 @router.post("/{ident}/versions/{version_id}/bind")
 async def bind(req: Request, ident: uuid.UUID, version_id: uuid.UUID, body: Bind, user: CurrentUser, db: DBSession):
     return await capability(req).bind(db, user, ident, version_id, body.agent_id)
+
+
+@router.get("/{ident}/versions/{version_id}/agents")
+async def assignment_candidates(
+    req: Request,
+    ident: uuid.UUID,
+    version_id: uuid.UUID,
+    user: CurrentUser,
+    db: DBSession,
+    search: str = "",
+    offset: int = 0,
+):
+    from app.services.desktop_automation.assignments import VersionAssignments
+
+    if len(search) > 120 or not 0 <= offset <= 10000:
+        fail(422, "Invalid search or offset")
+    return await VersionAssignments(capability(req)).candidates(db, user, ident, version_id, search.strip(), offset)
+
+
+@router.post("/{ident}/versions/{version_id}/assignments")
+async def batch_assign(
+    req: Request, ident: uuid.UUID, version_id: uuid.UUID, body: BatchBind, user: CurrentUser, db: DBSession
+):
+    from app.services.desktop_automation.assignments import VersionAssignments
+
+    return await VersionAssignments(capability(req)).assign(db, user, ident, version_id, body.agent_ids)

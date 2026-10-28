@@ -1,12 +1,18 @@
 import { useState } from "react";
 import type { Version, Workflow } from "./contracts";
 import { automationApi } from "./api";
+import { ToolAssignmentDialog } from "./ToolAssignmentDialog";
 interface Props {
   workflow: Workflow;
   onChanged: () => Promise<void>;
   onError: (message: string) => void;
 }
 export function VersionPanel({ workflow, onChanged, onError }: Props) {
+  const [allocation, setAllocation] = useState<{
+    id: string;
+    number: number;
+    published: boolean;
+  } | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Version | null>(null);
@@ -24,13 +30,35 @@ export function VersionPanel({ workflow, onChanged, onError }: Props) {
       setBusy(false);
     }
   };
+  const handlePublish = async () => {
+    setBusy(true);
+    onError("");
+    try {
+      const value = await automationApi.publish(workflow, note);
+      setNotice(`Tool v${value.number} 已发布，可分配给多个员工使用。`);
+      setAllocation({
+        id: value.version_id,
+        number: value.number,
+        published: true,
+      });
+      try {
+        await onChanged();
+      } catch {
+        onError("Tool 已发布，但版本列表刷新失败，请刷新页面查看。");
+      }
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "发布失败");
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <section>
       <div className="auto-card">
         <h3>发布版本</h3>
         <p className="auto-hint">
-          当前草稿必须完成结果验证并试运行通过。发布后自动注册为
-          Tool，请到数字员工的 Tool 中统一管理。每个版本保持不变。
+          当前草稿必须完成结果验证并试运行通过。发布会独立注册
+          Tool，随后可多选员工批量启用，也可以稍后分配。每个版本保持不变。
         </p>
         <div className="auto-row">
           <input
@@ -42,12 +70,7 @@ export function VersionPanel({ workflow, onChanged, onError }: Props) {
           <button
             className="btn btn-primary"
             disabled={busy}
-            onClick={() =>
-              void perform(
-                () => automationApi.publish(workflow, note),
-                "版本已发布，可在数字员工的 Tool 中启用。",
-              )
-            }
+            onClick={() => void handlePublish()}
           >
             发布当前草稿
           </button>
@@ -78,6 +101,15 @@ export function VersionPanel({ workflow, onChanged, onError }: Props) {
             内容摘要 {v.digest.slice(0, 16)} · Tool {v.tool_id}
           </p>
           <div className="auto-row">
+            <button
+              className="btn btn-primary"
+              disabled={!v.tool_id || busy}
+              onClick={() =>
+                setAllocation({ id: v.id, number: v.number, published: false })
+              }
+            >
+              分配给员工
+            </button>
             <button
               className="btn"
               onClick={() => {
@@ -111,6 +143,16 @@ export function VersionPanel({ workflow, onChanged, onError }: Props) {
           </div>
         </article>
       ))}
+      {allocation && (
+        <ToolAssignmentDialog
+          key={allocation.id}
+          workflowId={workflow.id}
+          workflowName={workflow.name}
+          version={allocation}
+          published={allocation.published}
+          onClose={() => setAllocation(null)}
+        />
+      )}
       {selected && (
         <div className="auto-card">
           <div className="auto-row">

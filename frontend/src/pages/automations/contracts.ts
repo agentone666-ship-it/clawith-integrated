@@ -177,3 +177,25 @@ export function emptyPython(): PythonScript {
     secret_parameters: [],
   };
 }
+
+export interface AssignmentAgent {
+  id: string;
+  name: string;
+  assigned: boolean;
+  versions: { id: string; number: number }[];
+}
+export interface AssignmentPage {
+  items: AssignmentAgent[];
+  total: number;
+  offset: number;
+  next_offset: number | null;
+}
+export interface AssignmentResult {
+  version_id: string;
+  tool_id: string;
+  number: number;
+  assigned_count: number;
+  changed_count: number;
+  unchanged_count: number;
+  agents: { id: string; name: string }[];
+}

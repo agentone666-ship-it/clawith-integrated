@@ -23,19 +23,30 @@ The same workflow library now owns `clawith.python.v1` source alongside recorded
 `clawith.cua.v1` steps. The type is derived from its persisted source contract.
 The browser selects RPA recording or Python editing at creation. Recording cannot
 replace a Python draft. Draft revision, trial history, immutable releases,
-and version restore share the automation lifecycle. User-facing Tool assignment,
-enabling and configuration belong exclusively to the digital employee Tool tab.
-The automation page has no Agent access dialog, employee selector or bind action;
-publishing registers the Tool, then users manage it through the existing employee
-Tool list. The management Tool is listed as 桌面自动化管理, and execution Tools
+and version restore share the automation lifecycle. Publication first registers an
+independent Tool, without selecting or mutating an employee. A dismissible
+post-publication guide offers search, pagination, multi-selection and optional
+batch allocation; version history provides the same entry later. Full per-employee
+Tool configuration remains in the employee Tool tab. No default employee is
+selected, and closing the guide does not undo publication.
+The management Tool is listed as 桌面自动化管理, and execution Tools
 use the workflow name and immutable version. Existing programmatic bindings and
 execution authorization remain supported.
 
 `AutomationRegistry` owns manager operations. Its opt-in `automation_registry`
 MCP Tool supports `sdk`, `list`, `get`, `version`, `observe`, `create`, `update`,
 `test`, `run_status`, `publish`, `bind` and `execute`. The registry bootstrap and programmatic assignment endpoints remain capability
-integration APIs; browser assignment uses the shared `/api/tools/agents/{id}`
-Tool management API from the digital employee page. Never enable it
+integration APIs; the employee Tool tab uses the shared `/api/tools/agents/{id}` Tool API. The
+post-publication shortcut uses `VersionAssignments` to write the same central
+AgentTool records, never a second assignment store. Candidate pages contain at
+most 50 manageable native employees; a submission contains 1–100 distinct IDs.
+All selected employees must still satisfy the human configuration policy and
+same-tenant/native checks before any writes. One invalid target rejects the
+whole batch. Agent rows are locked in UUID order, repeat submissions are
+idempotent, and each selected employee switches only this workflow's version.
+Unselected employees and unrelated Tools are untouched. New publication never
+automatically upgrades existing assignments. The legacy single bind endpoint
+and management-Tool caller delegate to this same mutation boundary. Never enable it
 by default on business employees. A management call verifies an actual held Run,
 matching Agent/tenant, enabled Tool/assignment, and active `origin_user_id`.
 Workflow access and Agent configuration use that origin user's existing policy,
@@ -186,3 +197,20 @@ browser verified the absence of binding controls and then searched, toggled and
 reloaded both the management Tool and a published execution Tool in the existing
 employee Tool tab. Both assignments persisted through the shared Tool API, with
 no page errors. The temporary verification employee and browser were removed.
+
+
+### Optional allocation after publication (2026-10-28)
+
+The human publication flow now offers a dismissible multi-employee allocation
+guide instead of a fixed employee selector. The same dialog is reachable from
+each published version. Candidate search is literal and paginated, selection
+is explicit and bounded, and already-enabled targets show their actual state.
+The old single-bind integration path delegates to the same transactional owner.
+Twelve assignment tests cover multi-target switching, unrelated Tool/config
+preservation, duplicate submission, whole-batch denial, permissions and paging;
+all 48 focused automation/registry/assignment tests passed. Actual development
+UI acceptance published a Tool without an employee, skipped the guide, reopened
+it and enabled the Tool for two isolated test employees. Independent AgentTool
+readback confirmed both assignments, the third employee retaining v1, unchanged
+unrelated Tools, no extra rows on replay, and no partial changes for a mixed
+invalid batch. Runtime backend container was not replaced.

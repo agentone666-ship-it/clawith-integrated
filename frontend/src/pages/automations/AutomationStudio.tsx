@@ -157,8 +157,8 @@ export function AutomationStudio() {
           <span className="auto-eyebrow">AUTOMATION STUDIO</span>
           <h1>桌面自动化</h1>
           <p>
-            统一托管 RPA 与 Agent 编写的脚本。发布后，在数字员工的 Tool
-            中统一启用与配置。
+            统一托管 RPA 与 Agent 编写的脚本。测试后独立发布
+            Tool，再按需批量分配给员工。
           </p>
         </div>
         <div className="auto-row">
