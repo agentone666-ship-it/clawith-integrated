@@ -207,6 +207,7 @@ export interface AuthoringAgent {
   ready: boolean;
 }
 export interface AuthoringReadiness {
+  spec_markdown: string;
   manager: { tool_id: string | null; enabled: boolean; name: string };
   items: AuthoringAgent[];
   total: number;

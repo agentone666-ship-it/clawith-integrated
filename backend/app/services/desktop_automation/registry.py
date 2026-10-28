@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,26 +23,7 @@ from .registry_schema import registry_schema
 from .scaffold import python_template
 from .service import AutomationService, fail
 
-SDK = """自动化管理 Tool 使用说明：
-1. sdk 获取说明；list/get/version 查看已有 RPA 步骤或 Python 源码。RPA 会附 python_template 脚手架，可保留其全部已验证动作/坐标/弹窗交互，只改参数计算，避免重新猜坐标。get 的 source_offset 可分页读取源码。
-2. observe 观察服务器独立 Windows 桌面；传 target={app,title} 可获取该窗口的控件文本。点击坐标是窗口左上角为原点的相对坐标，不是截图全屏坐标。不要猜坐标。
-3. create(name,description,script) 新建；update(workflow_id,revision,name,description,script) 保存。并发修改会拒绝，请重新 get。
-4. test(workflow_id,inputs,request_id) 等待试运行结果；失败看 result.diagnostic.line / failed_source_line / failed_step。修改后重新 test。
-5. publish(workflow_id,revision,note) 只允许当前源码完整摘要已有成功试运行。返回固定 version_id 和 tool_id。
-6. bind(workflow_id,version_id,agent_id) 把版本 Tool 分配给有权配置的业务 Agent。业务 Agent 调用 run_workflow，不需要管理 Tool。
-7. execute 仅可执行当前 Agent 已绑定的版本 Tool；管理 Tool 本身不会授予运行所有版本的权限。
-Python 格式：{"format":"clawith.python.v1","source":"...","parameters":{"order":"单号"},"secret_parameters":[]}
-Python 示例：
-from automation import ui, inputs
-from decimal import Decimal
-w = ui.window("notepad.exe", "*Notepad*")
-ui.launch("notepad")
-ui.type_text(inputs["order"], target=w)
-ui.assert_text(inputs["order"], target=w)
-SDK: ui.window(app,title), ui.launch(server_app_id), ui.click/double_click/right_click(x,y,target=w), ui.type_text(str,target=w), ui.key("tab",target=w), ui.hotkey("ctrl","s",target=w), ui.scroll("down",3,target=w), ui.assert_text(text,target=w,timeout_seconds=8)。各动作可带 label。
-纯 Python 只做参数计算、循环、条件分支和动作编排；它先在隔离环境产生有上限的动作计划，再执行桌面动作，不能在脚本里读界面或访问网络/文件/进程。先 observe 获取当前界面，或复用已有录制步骤。可用计算库 decimal/math/json/re/datetime/itertools/statistics。输入都是字符串。敏感参数仅能直接传 ui.type_text，不能拼接、计算或输出。不要在源码写凭据。
-每次操作最多120步，输入总32KiB，源码及参数总128KiB；一次桌面执行180秒。必须显式 ui.assert_text 校验结果。未知写入结果不可盲重试；先观察业务状态。新业务操作使用新的 request_id，同一操作查询/重试沿用相同ID。不得通过声明假的成功条件绕过验证。
-"""
+SDK = Path(__file__).with_name("AUTOMATION_AGENT.md").read_text(encoding="utf-8")
 
 
 class RegistryCall(BaseModel):

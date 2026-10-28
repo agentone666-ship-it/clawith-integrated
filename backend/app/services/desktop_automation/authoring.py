@@ -1,4 +1,4 @@
-"""Read-only readiness projection for the human coding-Agent handoff guide."""
+"""Read-only readiness and specification for the coding-Agent handoff."""
 
 from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,6 +54,7 @@ class AuthoringGuide:
         )
         return {
             "manager": {k: status[k] for k in ("tool_id", "enabled", "name")},
+            "spec_markdown": status["sdk"],
             "items": [
                 {
                     "id": str(a.id),

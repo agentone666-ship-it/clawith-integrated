@@ -2,34 +2,26 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildAuthoringPrompt as build } from "../src/pages/automations/authoringPrompt.ts";
 
-test("authoring handoff requires actual submission and explicit trial scope", () => {
-  const brief = {
-    name: "采购草稿",
-    goal: "计算并保存",
-    parameters: "订单号",
-    steps: "",
-    success: "编号和金额正确",
-    testData: "",
-    testAndPublish: false,
-  };
-  const draft = build(brief, "http://dev", null);
-  assert.match(draft, /本次只编写并提交草稿/);
-  assert.match(draft, /operation=create，name/);
-  assert.match(draft, /原生对象 script=/);
-  assert.match(draft, /http:\/\/dev\/automations\?workflow=<实际workflow_id>/);
-  assert.match(draft, /ui\.assert_text/);
-  assert.match(draft, /不算提交/);
-  const noData = build({ ...brief, testAndPublish: true }, "http://dev", null);
-  assert.match(noData, /本次只编写并提交草稿/);
-  const withData = build(
-    { ...brief, testData: "订单 TEST-1", testAndPublish: true },
+test("one business task carries the actual specification without configuration questions", () => {
+  const prompt = build(
+    "核对采购金额，用测试申请 TEST-001 验证后发布",
+    "# 实际 Agent 规范\n必须实际提交",
     "http://dev",
-    { id: "source-id", name: "原录制" },
+    { id: "source-id", name: "采购录制" },
   );
-  assert.match(withData, /已授权用上述测试数据试运行/);
-  assert.match(withData, /真实 test 成功才可 publish/);
-  assert.match(withData, /最多三轮/);
-  assert.match(withData, /不自动绑定/);
-  assert.match(withData, /source-id/);
-  assert.match(withData, /禁止修改或覆盖/);
+  assert.ok(prompt.startsWith("# 实际 Agent 规范"));
+  assert.match(prompt, /TEST-001/);
+  assert.match(prompt, /实际提交/);
+  assert.match(prompt, /不要让我选 Tool/);
+  assert.match(prompt, /只在缺少关键业务信息时提问/);
+  assert.match(prompt, /source-id/);
+  assert.match(prompt, /不得覆盖/);
+  assert.match(prompt, /http:\/\/dev\/automations\?workflow=<真实workflow_id>/);
+  assert.ok(!prompt.includes("testAndPublish"));
+});
+
+test("blank request asks only the business goal rather than configuration", () => {
+  const prompt = build("", "# 工作规范", "http://dev", null);
+  assert.match(prompt, /先问我想固化哪个业务流程/);
+  assert.ok(!prompt.includes("可只读参考"));
 });

@@ -165,7 +165,7 @@ export function AutomationStudio() {
         </div>
         <div className="auto-row">
           <button className="btn" onClick={() => setAuthoring(true)}>
-            让 coding agent 写脚本
+            交给 Agent 写脚本
           </button>
           <button className="btn btn-primary" onClick={() => setCreating(true)}>
             ＋ 新建自动化
@@ -174,11 +174,11 @@ export function AutomationStudio() {
       </header>
       <div className="auto-authoring-banner">
         <div>
-          <strong>不知道怎么把 Agent 写的脚本提交到这里？</strong>
-          <p>跟着引导检查 Tool、描述固定流程，再把任务复制给 coding agent。</p>
+          <strong>只说业务需求，脚本交给 Agent</strong>
+          <p>Agent 按工作规范完成编写、入库和验证，不用填写技术配置。</p>
         </div>
         <button className="btn" onClick={() => setAuthoring(true)}>
-          开始编写引导
+          让 Agent 来完成
         </button>
       </div>
       {authoring && (
@@ -189,12 +189,6 @@ export function AutomationStudio() {
             setAuthoring(false);
             setCreateKind("python");
             setCreating(true);
-          }}
-          onFind={async (name) => {
-            await refreshList();
-            setFilter("all");
-            setSearch(name);
-            setAuthoring(false);
           }}
         />
       )}
@@ -408,7 +402,7 @@ export function AutomationStudio() {
                     setAuthoring(true);
                   }}
                 >
-                  让 coding agent 编写并提交
+                  交给 Agent 写脚本
                 </button>
               </p>
             )}

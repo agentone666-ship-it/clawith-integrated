@@ -12,7 +12,7 @@ from test_desktop_automation import fixture as fixture  # noqa: PLC0414 -- Pytes
 
 from app.models.tool import AgentTool, Tool
 from app.services.desktop_automation.authoring import AuthoringGuide
-from app.services.desktop_automation.registry import AutomationRegistry
+from app.services.desktop_automation.registry import AutomationRegistry, RegistryCall
 
 
 async def test_readiness_requires_global_and_agent_enablement_without_mutation(fixture):
@@ -25,6 +25,7 @@ async def test_readiness_requires_global_and_agent_enablement_without_mutation(f
         await db.commit()
         missing = await guide.readiness(db, USER, "", 0)
         assert missing["manager"]["tool_id"] is None
+        assert missing["spec_markdown"].startswith("# 桌面自动化 Agent 工作规范")
         assert all(not x["ready"] for x in missing["items"])
         assert await db.get(Tool, registry.tool_id) is None
         tool = Tool(
@@ -89,3 +90,24 @@ async def test_readiness_owner_validates_bounds(fixture, search, offset):
         with pytest.raises(HTTPException) as error:
             await AuthoringGuide(AutomationRegistry(service, fixture[1])).readiness(db, USER, search, offset)
         assert error.value.status_code == 422
+
+
+async def test_agent_sdk_and_human_download_share_actual_markdown(fixture, monkeypatch):
+    service, engine, sessions = fixture
+    registry = AutomationRegistry(service, engine)
+
+    async def actor(db, meta):
+        return USER, SimpleNamespace()
+
+    monkeypatch.setattr(registry, "actor", actor)
+    async with sessions() as db:
+        result = await registry.invoke(db, {}, RegistryCall(operation="sdk"))
+        status = await registry.status(db, USER)
+        spec = result["sdk"]
+        assert spec == status["sdk"]
+        assert spec.startswith("# 桌面自动化 Agent 工作规范")
+        assert "不要把选 Tool" in spec and "必须调用 `create" in spec
+        assert "最多三轮" in spec and "成功试运行不能发布" in spec
+        assert "只写草稿" in spec and "不伪造 Run 身份" in spec
+        assert len(spec.encode()) < 16384
+        assert not service.driver.inputs

@@ -216,7 +216,7 @@ unrelated Tools, no extra rows on replay, and no partial changes for a mixed
 invalid batch. Runtime backend container was not replaced.
 
 
-### Coding-Agent authoring handoff (2026-10-28)
+### Coding-Agent authoring handoff (2026-10-28, superseded below)
 
 A persistent library entry and the Python creation dialog open a three-step guide:
 check a manageable native employee's actual `automation_registry` readiness,
@@ -247,3 +247,38 @@ mutation or chat send occurred during the guide acceptance, and the main Runtime
 container remained unchanged. This proves the guide and handoff contract, not a
 new model-authored business execution. Previously-ready coding employees sort
 first so a new user can discover them without knowing their names.
+
+
+### Agent-owned authoring specification (2026-10-28, current)
+
+User feedback rejected the multi-step configuration guide. Its employee picker,
+readiness refresh controls, separate business-field form and test/publication
+checkboxes are removed. The current entry accepts one natural-language business
+task, reads actual readiness and chooses an already-enabled coding employee
+(prefer a named script engineer, otherwise the first enabled manager assignment).
+No new grant or fixed workflow binding occurs. The action copies the task and
+specification and opens that employee's existing chat; the human pastes/sends.
+A Markdown download supports external coding agents. This preserves existing
+chat delivery semantics without a second Agent scheduler or task state machine.
+
+`backend/app/services/desktop_automation/AUTOMATION_AGENT.md` is the single
+agent-facing source of truth for authoring workflow and current SDK. Both the
+management Tool's `sdk` operation and the authenticated authoring projection
+serve this exact file. The Agent owns discovery, input design, code, actual
+`create/update`, authorized trial/repair and publication when a reusable Tool
+is requested. Missing test conditions yield a saved draft and one business
+question; they never justify invented data in a real system, fake results or
+permission bypass. Business constraints override defaults. References remain
+read-only unless explicitly selected for repair. Publication stays independent
+of optional employee allocation.
+
+Verification: 54 focused backend cases passed, including SDK/readiness serving
+the same Markdown contract, plus two natural-task prompt tests, Ruff, targeted
+Pyright, frontend TypeScript/ESLint and overlay build. Real server headless UI
+acceptance confirmed one business textbox, no configuration selectors, exact MD
+download content, real LAN HTTP clipboard copy containing the spec and task,
+automatic ready-employee resolution, existing chat navigation, no auto-send or
+automation mutations, and wide/narrow layout. Screenshots were inspected. The
+main Runtime and isolated Windows/compile provider were not replaced. This
+validates spec delivery and UI simplification; no new model/business run was
+claimed for this change.

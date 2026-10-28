@@ -1,112 +1,34 @@
 .auto-modal.auto-authoring-modal {
-  width: min(940px, calc(100vw - 32px));
+  width: min(740px, calc(100vw - 32px));
   max-height: calc(100vh - 40px);
   overflow-y: auto;
 }
 .auto-authoring-lead {
   color: var(--text-secondary);
-  font-size: 13px;
-}
-.auto-authoring-progress {
-  display: flex;
-  gap: 12px;
-  list-style: none;
-  padding: 0;
-  margin: 20px 0;
-}
-.auto-authoring-progress li {
-  flex: 1;
-  border-bottom: 3px solid var(--auto-line);
-  padding: 9px 0;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-.auto-authoring-progress li.active,
-.auto-authoring-progress li.done {
-  border-color: var(--auto-accent);
-  color: var(--auto-accent);
-}
-.auto-authoring-explainer,
-.auto-authoring-setup,
-.auto-authoring-checklist {
-  background: var(--bg-secondary, #f3f7f4);
-  border: 1px solid var(--auto-line);
-  border-radius: 9px;
-  padding: 14px 16px;
-  margin: 16px 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.8;
 }
 .auto-authoring-modal label {
   display: block;
-  margin: 12px 0;
-  font-size: 13px;
+  margin: 20px 0 10px;
+  font-size: 14px;
 }
-.auto-authoring-modal label > input:not([type="checkbox"]),
 .auto-authoring-modal textarea {
   display: block;
   width: 100%;
   box-sizing: border-box;
-  margin-top: 7px;
-}
-.auto-authoring-agents {
-  max-height: 230px;
-  overflow-y: auto;
-  border: 1px solid var(--auto-line);
-  border-radius: 8px;
-  margin: 12px 0;
-}
-.auto-authoring-agents > button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  border: 0;
-  border-bottom: 1px solid var(--auto-line);
+  min-height: 130px;
+  margin-top: 10px;
   padding: 12px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  cursor: pointer;
-  text-align: left;
-}
-.auto-authoring-agents > button.selected {
-  background: #76ae9422;
-  outline: 2px solid var(--auto-accent);
-  outline-offset: -2px;
-}
-.auto-authoring-agents small {
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-.auto-authoring-external {
-  margin: 16px 0;
-  font-size: 12px;
-  line-height: 1.8;
-}
-.auto-authoring-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-.auto-authoring-modal .auto-authoring-checkbox {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-.auto-authoring-modal .auto-authoring-prompt {
-  height: 280px;
-  resize: vertical;
-  font-size: 12px;
+  font: inherit;
   line-height: 1.7;
-  margin-bottom: 12px;
+  resize: vertical;
 }
-.auto-authoring-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-top: 20px;
+.auto-authoring-details {
+  margin: 24px 0 0;
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--text-secondary);
 }
 .auto-authoring-banner {
   display: flex;
@@ -125,16 +47,8 @@
   color: var(--text-secondary);
 }
 @media (max-width: 720px) {
-  .auto-authoring-grid {
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
   .auto-authoring-banner {
     flex-direction: column;
     align-items: flex-start;
-  }
-  .auto-authoring-agents > button {
-    align-items: flex-start;
-    flex-direction: column;
   }
 }
