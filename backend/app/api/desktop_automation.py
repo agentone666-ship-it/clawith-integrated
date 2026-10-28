@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import get_current_user
 from app.database import get_db
 from app.models.user import User
-from app.services.desktop_automation.contracts import Script, Step
+from app.services.desktop_automation.code_contracts import ManagedScript
+from app.services.desktop_automation.contracts import Step
 from app.services.desktop_automation.service import fail
 
 CurrentUser: TypeAlias = Annotated[User, Depends(get_current_user)]
@@ -22,15 +23,19 @@ DBSession: TypeAlias = Annotated[AsyncSession, Depends(get_db)]
 router = APIRouter(prefix="/automations", tags=["desktop-automation"])
 
 
-class Create(BaseModel):
+class WorkflowFields(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=1000)
 
 
-class Draft(Create):
+class Create(WorkflowFields):
+    script: ManagedScript | None = None
+
+
+class Draft(WorkflowFields):
     revision: int = Field(ge=0)
-    script: Script
+    script: ManagedScript
 
 
 class Revision(BaseModel):
@@ -79,7 +84,22 @@ async def listing(req: Request, user: CurrentUser, db: DBSession, offset: int = 
 
 @router.post("")
 async def create(req: Request, body: Create, user: CurrentUser, db: DBSession):
-    return await capability(req).create(db, user, body.name, body.description)
+    return await capability(req).create(db, user, body.name, body.description, body.script)
+
+
+@router.get("/registry")
+async def registry_status(req: Request, user: CurrentUser, db: DBSession):
+    return await req.app.state.automation_registry.status(db, user)
+
+
+@router.post("/registry")
+async def registry_register(req: Request, user: CurrentUser, db: DBSession):
+    return await req.app.state.automation_registry.register(db, user)
+
+
+@router.post("/registry/bind")
+async def registry_bind(req: Request, body: Bind, user: CurrentUser, db: DBSession):
+    return await req.app.state.automation_registry.bind_manager(db, user, body.agent_id)
 
 
 @router.get("/{ident}")

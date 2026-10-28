@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { actionLabels, newStep, reconcileParameters } from "./contracts";
-import type { Script, Step } from "./contracts";
+import type { RpaScript, Step } from "./contracts";
 interface Props {
-  script: Script;
-  onChange: (script: Script) => void;
+  script: RpaScript;
+  onChange: (script: RpaScript) => void;
   onSave: () => void;
   busy: boolean;
 }
@@ -65,7 +65,7 @@ export function ScriptEditor({ script, onChange, onSave, busy }: Props) {
             className="btn"
             onClick={() => {
               try {
-                const parsed: Script = JSON.parse(json) as Script;
+                const parsed: RpaScript = JSON.parse(json) as RpaScript;
                 if (
                   parsed.format !== "clawith.cua.v1" ||
                   !Array.isArray(parsed.steps)

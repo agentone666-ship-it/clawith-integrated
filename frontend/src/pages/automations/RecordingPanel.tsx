@@ -117,7 +117,8 @@ export function RecordingPanel({
     : null;
   const handleStart = async () => {
     if (
-      workflow.draft.steps.length &&
+      (workflow.draft.format === "clawith.cua.v1" ? workflow.draft.steps : [])
+        .length &&
       !window.confirm("重新录制会替换当前草稿，已发布的版本会保留。继续吗？")
     )
       return;
@@ -167,7 +168,13 @@ export function RecordingPanel({
             onClick={() => void handleStart()}
             disabled={busy}
           >
-            ● {workflow.draft.steps.length ? "重新录制" : "开始录制桌面流程"}
+            ●{" "}
+            {(workflow.draft.format === "clawith.cua.v1"
+              ? workflow.draft.steps
+              : []
+            ).length
+              ? "重新录制"
+              : "开始录制桌面流程"}
           </button>
         ) : (
           <>

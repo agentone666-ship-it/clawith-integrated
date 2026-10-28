@@ -17,7 +17,7 @@ from app.models.agent_run import AgentRun
 from app.models.tool import AgentTool, Tool
 from app.models.user import User
 
-from .contracts import Script
+from .code_contracts import load_script
 from .models import Playback, Version, Workflow
 
 router = APIRouter()
@@ -51,7 +51,7 @@ async def mcp(req: Request, version_id: uuid.UUID):
         tool = await db.get(Tool, version.tool_id)
         if tool is None or not tool.enabled:
             return JSONResponse({"error": "Tool is disabled"}, status_code=403)
-        script = Script.model_validate(version.script)
+        script = load_script(version.script)
         method, ident = body.get("method"), body.get("id")
         if method == "initialize":
             result = {

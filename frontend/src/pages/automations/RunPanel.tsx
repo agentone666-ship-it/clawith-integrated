@@ -88,7 +88,13 @@ export function RunPanel({
         </div>
         <button
           className="btn btn-primary"
-          disabled={busy || running || !script.steps.length}
+          disabled={
+            busy ||
+            running ||
+            (script.format === "clawith.cua.v1"
+              ? !script.steps.length
+              : !script.source.trim())
+          }
           onClick={() => void test()}
         >
           {busy ? "正在启动…" : "▶ 试运行草稿"}
@@ -119,9 +125,18 @@ export function RunPanel({
             )}
             {run.result.error && (
               <p className="auto-error">
+                {(run.result.diagnostic?.line ||
+                  run.result.failed_source_line) &&
+                  `源码第 ${run.result.diagnostic?.line || run.result.failed_source_line} 行 · `}
                 {run.result.failed_step && `步骤 ${run.result.failed_step}：`}
                 {run.result.error}
               </p>
+            )}
+            {run.result.compiler_stdout && (
+              <details>
+                <summary>脚本诊断输出</summary>
+                <pre>{run.result.compiler_stdout}</pre>
+              </details>
             )}
             {Object.keys(run.input_summary || {}).length > 0 && (
               <details>

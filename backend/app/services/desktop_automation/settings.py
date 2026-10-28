@@ -14,6 +14,8 @@ class Settings:
     signing_key: str
     evidence_dir: Path
     driver_tool_id: str
+    compiler_url: str = ""
+    compiler_token: str = ""
 
     @classmethod
     def load(cls) -> "Settings":
@@ -35,4 +37,8 @@ class Settings:
             Path(os.environ[required[4]]).read_text().strip(),
             Path(os.getenv("AUTOMATION_EVIDENCE_DIR", "/data/desktop-automation")),
             os.environ[required[5]],
+            os.getenv("AUTOMATION_COMPILER_URL", ""),
+            Path(os.environ["AUTOMATION_COMPILER_TOKEN_FILE"]).read_text().strip()
+            if os.getenv("AUTOMATION_COMPILER_TOKEN_FILE")
+            else "",
         )

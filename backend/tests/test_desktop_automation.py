@@ -47,7 +47,7 @@ class Desktop:
     async def anchor(self, session, step):
         return step
 
-    async def execute(self, session, step, inputs, request_id, applications):
+    async def execute(self, session, step, inputs, request_id, applications, **kwargs):
         self.owners.add(session)
         if step.action == "assert_text":
             if not self.inputs:

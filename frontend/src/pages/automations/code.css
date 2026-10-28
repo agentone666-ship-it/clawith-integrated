@@ -1,0 +1,25 @@
+.auto-shell .auto-code-editor {
+  width: 100%;
+  min-height: 360px;
+  resize: vertical;
+  font:
+    13px/1.7 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  background: #101a2d;
+  color: #dce8f8;
+  padding: 18px;
+  border-radius: 10px;
+  tab-size: 4;
+}
+.auto-shell .auto-sdk {
+  white-space: pre-wrap;
+  max-height: 320px;
+  overflow: auto;
+  font-size: 12px;
+}
+.auto-shell .auto-library > select {
+  width: 100%;
+  margin-top: 10px;
+}

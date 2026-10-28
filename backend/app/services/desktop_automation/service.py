@@ -20,6 +20,7 @@ from app.models.tool import AgentTool, Tool
 from app.models.user import User
 from app.services.tool_config import encrypt_sensitive_fields
 
+from .code_contracts import ManagedScript, PythonScript, kind, load_script
 from .contracts import PARAMETER, Script, Step
 from .driver import CuaDriver, DriverFailure
 from .models import Playback, Recording, RecordingAction, Version, Workflow, now
@@ -79,9 +80,14 @@ class AutomationService:
         if user.role not in {"org_admin", "platform_admin"}:
             stmt = stmt.where(Workflow.owner_id == user.id)
         rows = (await db.execute(stmt.order_by(Workflow.updated_at.desc()).offset(offset).limit(50))).scalars()
-        return [as_dict(w, ["id", "name", "description", "revision", "updated_at"]) for w in rows]
+        return [
+            {**as_dict(w, ["id", "name", "description", "revision", "updated_at"]), "kind": kind(load_script(w.draft))}
+            for w in rows
+        ]
 
-    async def create(self, db: AsyncSession, user: User, name: str, description: str) -> dict:
+    async def create(
+        self, db: AsyncSession, user: User, name: str, description: str, script: ManagedScript | None = None
+    ) -> dict:
         tenant = self.authorize(user)
         count = (
             await db.execute(select(func.count()).select_from(Workflow).where(Workflow.tenant_id == tenant))
@@ -89,7 +95,11 @@ class AutomationService:
         if count >= 500:
             fail(409, "Workflow limit reached")
         row = Workflow(
-            tenant_id=tenant, owner_id=user.id, name=name, description=description, draft=Script().model_dump()
+            tenant_id=tenant,
+            owner_id=user.id,
+            name=name,
+            description=description,
+            draft=(script or Script()).model_dump(),
         )
         db.add(row)
         await db.flush()
@@ -131,14 +141,36 @@ class AutomationService:
         )
         return {
             **as_dict(w, ["id", "name", "description", "draft", "revision", "updated_at"]),
-            "versions": [as_dict(v, ["id", "number", "digest", "note", "tool_id", "created_at"]) for v in versions],
+            "versions": [
+                as_dict(
+                    v,
+                    [
+                        "id",
+                        "number",
+                        "digest",
+                        "note",
+                        "tool_id",
+                        "validation_run_id",
+                        "compiler_fingerprint",
+                        "created_at",
+                    ],
+                )
+                for v in versions
+            ],
             "runs": [self.run_view(r) for r in runs],
             "recording": self.record_view(sessions[0]) if sessions else None,
             "applications": [{"id": k, "label": v["label"]} for k, v in self.applications.items()],
         }
 
     async def edit(
-        self, db: AsyncSession, user: User, ident: uuid.UUID, revision: int, script: Script, name: str, description: str
+        self,
+        db: AsyncSession,
+        user: User,
+        ident: uuid.UUID,
+        revision: int,
+        script: ManagedScript,
+        name: str,
+        description: str,
     ) -> dict:
         w = await self.workflow(db, user, ident, lock=True)
         if w.revision != revision:
@@ -170,23 +202,29 @@ class AutomationService:
         w = await self.workflow(db, user, ident, lock=True)
         if w.revision != revision:
             fail(409, "Draft changed; validate and publish the current draft")
-        script = Script.model_validate(w.draft)
-        if not script.steps or not any(s.action == "assert_text" for s in script.steps):
+        script = load_script(w.draft)
+        if isinstance(script, Script) and (
+            not script.steps or not any(s.action == "assert_text" for s in script.steps)
+        ):
             fail(409, "Add an explicit result verification step before publishing")
         proof = (
             await db.execute(
-                select(Playback.id)
+                select(Playback)
                 .where(
                     Playback.workflow_id == ident,
                     Playback.tenant_id == w.tenant_id,
                     Playback.digest == script.digest(),
                     Playback.status == "succeeded",
+                    Playback.version_id.is_(None),
                 )
+                .order_by(Playback.created_at.desc())
                 .limit(1)
             )
         ).scalar_one_or_none()
         if proof is None:
             fail(409, "This exact draft must pass a test before publication")
+        if isinstance(script, PythonScript) and not proof.result.get("compiler_fingerprint"):
+            fail(409, "Python draft requires a successful isolated test")
         num = (await db.execute(select(func.max(Version.number)).where(Version.workflow_id == ident))).scalar_one() or 0
         if num >= 100:
             fail(409, "This workflow reached its 100-version limit")
@@ -198,13 +236,15 @@ class AutomationService:
             script=script.model_dump(),
             digest=script.digest(),
             note=note,
+            validation_run_id=proof.id,
+            compiler_fingerprint=proof.result.get("compiler_fingerprint") if isinstance(script, PythonScript) else None,
         )
         tool = Tool(
             id=uuid.uuid4(),
             name=f"desktop_{w.id.hex[:12]}_v{v.number}",
             display_name=f"{w.name} · v{v.number}",
             description=w.description[:700]
-            + " Execute the recorded desktop workflow with the supplied inputs. The published version is fixed. Success requires its recorded result checks. Do not retry an unknown write outcome; inspect the run result first.",
+            + " Execute the tested desktop automation with the supplied inputs. The published version is fixed. Success requires its recorded result checks. Do not retry an unknown write outcome; inspect the run result first.",
             type="mcp",
             category="custom",
             parameters_schema=script.input_schema(),
@@ -222,7 +262,12 @@ class AutomationService:
         v.tool_id = tool.id
         db.add_all([v, tool])
         await db.flush()
-        return {"version_id": str(v.id), "number": v.number, "tool_id": str(tool.id)}
+        return {
+            "version_id": str(v.id),
+            "number": v.number,
+            "tool_id": str(tool.id),
+            "validation_run_id": str(proof.id),
+        }
 
     async def restore(
         self, db: AsyncSession, user: User, ident: uuid.UUID, version_id: uuid.UUID, revision: int
@@ -297,7 +342,7 @@ class AutomationService:
 
     @staticmethod
     def run_view(r: Playback) -> dict:
-        return as_dict(
+        view = as_dict(
             r,
             [
                 "id",
@@ -314,6 +359,8 @@ class AutomationService:
                 "updated_at",
             ],
         )
+        view["result"] = {k: v for k, v in (r.result or {}).items() if k != "compiled_plan"}
+        return view
 
     async def recording(
         self, db: AsyncSession, user: User, ident: uuid.UUID, *, allow_release_pending: bool = False
@@ -338,6 +385,8 @@ class AutomationService:
             w = await self.workflow(db, user, ident, lock=True)
             if w.revision != revision:
                 fail(409, "Draft changed; refresh first")
+            if isinstance(load_script(w.draft), PythonScript):
+                fail(409, "Python scripts are edited as source; create an RPA workflow to record")
             await self.assert_desktop_idle(db)
             r = Recording(
                 id=uuid.uuid4(),

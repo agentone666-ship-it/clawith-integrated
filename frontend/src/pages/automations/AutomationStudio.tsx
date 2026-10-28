@@ -6,7 +6,11 @@ import { RecordingPanel } from "./RecordingPanel";
 import { ScriptEditor } from "./ScriptEditor";
 import { RunPanel } from "./RunPanel";
 import { VersionPanel } from "./VersionPanel";
+import { PythonEditor } from "./PythonEditor";
+import { emptyPython } from "./contracts";
+import { AgentAccess } from "./AgentAccess";
 import "./studio.css";
+import "./responsive.css";
 
 type Tab = "record" | "edit" | "runs" | "versions";
 const tabs: { id: Tab; label: string }[] = [
@@ -29,6 +33,9 @@ export function AutomationStudio() {
   const [tab, setTab] = useState<Tab>("record");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showAccess, setShowAccess] = useState(false);
+  const [createKind, setCreateKind] = useState<"rpa" | "python">("rpa");
+  const [filter, setFilter] = useState("all");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -72,6 +79,7 @@ export function AutomationStudio() {
         if (!stopped) {
           setWorkflow(w);
           setScript(w.draft);
+          setTab(w.draft.format === "clawith.python.v1" ? "edit" : "record");
         }
       })
       .catch((e) => {
@@ -106,13 +114,17 @@ export function AutomationStudio() {
     setBusy(true);
     setError("");
     try {
-      const w = await automationApi.create(name.trim(), description.trim());
+      const w = await automationApi.create(
+        name.trim(),
+        description.trim(),
+        createKind === "python" ? emptyPython() : undefined,
+      );
       setSelected(w.id);
       setQuery({ workflow: w.id });
       setCreating(false);
       setName("");
       setDescription("");
-      setTab("record");
+      setTab(createKind === "python" ? "edit" : "record");
       await refreshList();
     } catch (e) {
       onError(e instanceof Error ? e.message : "创建失败");
@@ -146,11 +158,18 @@ export function AutomationStudio() {
         <div>
           <span className="auto-eyebrow">AUTOMATION STUDIO</span>
           <h1>桌面自动化</h1>
-          <p>把一次人工操作，变成数字员工可调用的流程。</p>
+          <p>
+            统一托管 RPA 与 Agent 编写的脚本，测试后发布为员工可调用的 Tool。
+          </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setCreating(true)}>
-          ＋ 新建自动化
-        </button>
+        <div className="auto-row">
+          <button className="btn" onClick={() => setShowAccess(true)}>
+            Agent 接入
+          </button>
+          <button className="btn btn-primary" onClick={() => setCreating(true)}>
+            ＋ 新建自动化
+          </button>
+        </div>
       </header>
       {error && (
         <div className="auto-error-banner" role="alert">
@@ -168,6 +187,9 @@ export function AutomationStudio() {
           </button>
         </div>
       )}
+      {showAccess && (
+        <AgentAccess onClose={() => setShowAccess(false)} onError={onError} />
+      )}
       <div className="auto-workspace">
         <aside className="auto-library">
           <div className="auto-library-title">
@@ -180,11 +202,24 @@ export function AutomationStudio() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="搜索流程名称"
           />
+          <select
+            aria-label="自动化类型筛选"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          >
+            <option value="all">全部类型</option>
+            <option value="rpa">RPA 录制</option>
+            <option value="python">Python 脚本</option>
+          </select>
           {!list.length && (
             <p className="auto-hint">创建第一个流程，从独立桌面开始录制。</p>
           )}
           {list
-            .filter((w) => (w.name + w.description).includes(search))
+            .filter(
+              (w) =>
+                (w.name + w.description).includes(search) &&
+                (filter === "all" || w.kind === filter),
+            )
             .map((w) => (
               <button
                 className={
@@ -201,7 +236,10 @@ export function AutomationStudio() {
                 <div>
                   <strong>{w.name}</strong>
                   <small>{w.description || "桌面流程"}</small>
-                  <small>草稿 r{w.revision}</small>
+                  <small>
+                    {w.kind === "python" ? "Python 脚本" : "RPA 录制"} · 草稿 r
+                    {w.revision}
+                  </small>
                 </div>
               </button>
             ))}
@@ -220,26 +258,34 @@ export function AutomationStudio() {
                 <span className="auto-badge">草稿 r{workflow.revision}</span>
               </div>
               <nav className="auto-tabs" aria-label="自动化管理栏目">
-                {tabs.map((t) => (
-                  <button
-                    key={t.id}
-                    className={tab === t.id ? "active" : ""}
-                    onClick={() => setTab(t.id)}
-                    disabled={
-                      (!!workflow.recording && t.id !== "record") ||
-                      (dirty && (t.id === "runs" || t.id === "versions"))
-                    }
-                  >
-                    {t.label}
-                  </button>
-                ))}
+                {tabs
+                  .filter(
+                    (t) =>
+                      script.format !== "clawith.python.v1" ||
+                      t.id !== "record",
+                  )
+                  .map((t) => (
+                    <button
+                      key={t.id}
+                      className={tab === t.id ? "active" : ""}
+                      onClick={() => setTab(t.id)}
+                      disabled={
+                        (!!workflow.recording && t.id !== "record") ||
+                        (dirty && (t.id === "runs" || t.id === "versions"))
+                      }
+                    >
+                      {t.id === "edit" && script.format === "clawith.python.v1"
+                        ? "代码与参数"
+                        : t.label}
+                    </button>
+                  ))}
               </nav>
               {dirty && (
                 <p className="auto-notice">
                   步骤有未保存的修改。请先保存草稿，再试运行或发布。
                 </p>
               )}
-              {tab === "record" && (
+              {tab === "record" && script.format === "clawith.cua.v1" && (
                 <RecordingPanel
                   key={workflow.recording?.id || "idle"}
                   workflow={workflow}
@@ -249,8 +295,16 @@ export function AutomationStudio() {
                   onError={onError}
                 />
               )}
-              {tab === "edit" && (
+              {tab === "edit" && script.format === "clawith.cua.v1" && (
                 <ScriptEditor
+                  script={script}
+                  onChange={setScript}
+                  onSave={() => void handleSave()}
+                  busy={busy}
+                />
+              )}
+              {tab === "edit" && script.format === "clawith.python.v1" && (
+                <PythonEditor
                   script={script}
                   onChange={setScript}
                   onSave={() => void handleSave()}
@@ -306,6 +360,21 @@ export function AutomationStudio() {
           >
             <h2>新建自动化</h2>
             <label>
+              自动化类型
+              <select
+                aria-label="自动化类型"
+                value={createKind}
+                onChange={(e) =>
+                  setCreateKind(e.target.value as "rpa" | "python")
+                }
+              >
+                <option value="rpa">RPA 录制：通过桌面面板操作</option>
+                <option value="python">
+                  Python 脚本：由 Agent 编写或手动编辑
+                </option>
+              </select>
+            </label>
+            <label>
               流程名称
               <input
                 aria-label="流程名称"
@@ -336,7 +405,7 @@ export function AutomationStudio() {
                 disabled={busy || !name.trim()}
                 onClick={() => void handleCreate()}
               >
-                创建并录制
+                {createKind === "python" ? "创建并编写脚本" : "创建并录制"}
               </button>
             </div>
           </section>

@@ -93,7 +93,9 @@
   padding: 0 6px 16px;
   font-size: 12px;
 }
-.auto-library-title span { color: var(--text-tertiary, #85918b); }
+.auto-library-title span {
+  color: var(--text-tertiary, #85918b);
+}
 .auto-library > input {
   width: 100%;
   margin-bottom: 15px;
@@ -118,7 +120,9 @@
   border-color: var(--auto-line);
   box-shadow: 0 2px 5px #203c2d06;
 }
-.auto-library-item:hover { background: var(--bg-primary, #fff); }
+.auto-library-item:hover {
+  background: var(--bg-primary, #fff);
+}
 .auto-library-icon {
   display: flex;
   align-items: center;
@@ -131,7 +135,9 @@
   font-size: 17px;
   flex-shrink: 0;
 }
-.auto-library-item > div { min-width: 0; }
+.auto-library-item > div {
+  min-width: 0;
+}
 .auto-library-item strong {
   display: block;
   font-size: 12px;
@@ -162,7 +168,9 @@
   font-size: 19px;
   margin: 0 0 9px;
 }
-.auto-workflow-heading p { font-size: 12px; }
+.auto-workflow-heading p {
+  font-size: 12px;
+}
 .auto-tabs {
   display: flex;
   gap: 22px;
@@ -191,10 +199,18 @@
   gap: 10px;
   flex-wrap: wrap;
 }
-.auto-toolbar { margin: 15px 0; }
-.auto-toolbar strong { font-size: 12px; }
-.auto-toolbar h3 { margin: 0; }
-.auto-spacer { flex: 1; }
+.auto-toolbar {
+  margin: 15px 0;
+}
+.auto-toolbar strong {
+  font-size: 12px;
+}
+.auto-toolbar h3 {
+  margin: 0;
+}
+.auto-spacer {
+  flex: 1;
+}
 .auto-hint {
   font-size: 11px;
   line-height: 1.8;
@@ -205,7 +221,9 @@
   font-size: 11px;
   font-weight: 600;
 }
-.auto-record-state.paused { color: #ad8339; }
+.auto-record-state.paused {
+  color: #ad8339;
+}
 .auto-desktop {
   min-height: 220px;
   background: #17211e;
@@ -541,49 +559,4 @@
 }
 .auto-modal .auto-row {
   margin-top: 22px;
-}
-@media (max-width: 1050px) {
-  .auto-shell {
-    padding: 16px;
-  }
-  .auto-workspace {
-    grid-template-columns: 180px minmax(0, 1fr);
-  }
-  .auto-main {
-    padding: 16px;
-  }
-  .auto-inputs {
-    grid-template-columns: 1fr;
-  }
-  .auto-tabs {
-    gap: 14px;
-  }
-  .auto-toolbar {
-    gap: 6px;
-  }
-}
-@media (max-width: 1100px) {
-  .auto-workspace {
-    grid-template-columns: 1fr;
-  }
-  .auto-library {
-    border-right: 0;
-    border-bottom: 1px solid var(--auto-line);
-    max-height: 200px;
-    overflow: auto;
-  }
-  .auto-library-item {
-    display: inline-flex;
-    width: 180px;
-  }
-  .auto-page-header {
-    align-items: flex-start;
-  }
-  .auto-page-header h1 {
-    font-size: 23px;
-  }
-  .auto-diff,
-  .auto-parameter-grid {
-    grid-template-columns: 1fr;
-  }
 }

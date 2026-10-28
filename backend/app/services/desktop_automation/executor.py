@@ -14,11 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session
 from app.models.agent_run import AgentRun
+from app.models.tool import AgentTool, Tool
 from app.models.user import User
 
+from .code_contracts import CodePlan, PythonScript, load_script
 from .contracts import Script
 from .driver import DriverFailure
 from .models import Playback, Recording, Workflow, now
+from .python_compiler import CompilationError, PythonCompiler
 from .service import AutomationService, fail
 
 
@@ -38,14 +41,37 @@ class PlaybackEngine:
     ) -> dict:
         async with self.service.lock:
             w = await self.service.workflow(db, user, workflow_id)
-            if version_id:
-                v = await self.service.version(db, user, workflow_id, version_id)
-                script = Script.model_validate(v.script)
-            else:
-                script = Script.model_validate(w.draft)
-            if not script.steps or not any(s.action == "assert_text" for s in script.steps):
+            v = await self.service.version(db, user, workflow_id, version_id) if version_id else None
+            actor = None
+            script = load_script(v.script if v else w.draft)
+            if isinstance(script, Script) and (
+                not script.steps or not any(s.action == "assert_text" for s in script.steps)
+            ):
                 fail(422, "Record steps and add a result verification before testing")
             script.validate_inputs(inputs)
+            if agent_run_id:
+                actor = await db.get(AgentRun, agent_run_id)
+                if actor is None or actor.tenant_id != w.tenant_id or not actor.lane_held:
+                    fail(403, "The Agent Run no longer owns its execution lane")
+                tool_id = v.tool_id if v else uuid.uuid5(w.tenant_id, "desktop-automation-registry")
+                assigned = (
+                    await db.execute(
+                        select(AgentTool.id)
+                        .join(Tool, Tool.id == AgentTool.tool_id)
+                        .where(
+                            AgentTool.agent_id == actor.agent_id,
+                            AgentTool.tool_id == tool_id,
+                            AgentTool.enabled.is_(True),
+                            Tool.enabled.is_(True),
+                            Tool.tenant_id == w.tenant_id,
+                        )
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if not assigned:
+                    fail(403, "This Agent Run has no assigned automation Tool")
+                if not version_id and actor.origin_user_id != user.id:
+                    fail(403, "Draft tests require the Runtime origin user")
             fingerprint = hashlib.sha256(
                 json.dumps(
                     [script.digest(), inputs, str(version_id), str(agent_run_id)], sort_keys=True, ensure_ascii=False
@@ -77,10 +103,30 @@ class PlaybackEngine:
                 progress=0,
                 result={},
             )
-            if agent_run_id:
-                actor = await db.get(AgentRun, agent_run_id)
-                if actor is None or actor.tenant_id != w.tenant_id or not actor.lane_held:
-                    fail(403, "The Agent Run no longer owns its execution lane")
+            if isinstance(script, PythonScript):
+                try:
+                    plan, diagnostics = await PythonCompiler(self.service.config).compile(script, inputs)
+                    if v and diagnostics["compiler_fingerprint"] != v.compiler_fingerprint:
+                        raise CompilationError(
+                            {"code": "compiler_changed", "message": "Python SDK 环境已改变，请重新测试并发布新版本"}
+                        )
+                    r.result = {**diagnostics, "compiled_plan": plan.model_dump(), "total_steps": len(plan.steps)}
+                except CompilationError as exc:
+                    r.status = "failed"
+                    r.result = {
+                        "error": str(exc),
+                        "diagnostic": exc.diagnostic,
+                        "desktop_started": False,
+                        "evidence": False,
+                        "release_confirmed": True,
+                    }
+                    db.add(r)
+                    await db.commit()
+                    return self.service.run_view(r)
+            if actor is not None:
+                await db.refresh(actor)
+                if not actor.lane_held:
+                    fail(403, "Agent Run ended before desktop execution")
                 held = (
                     (
                         await db.execute(
@@ -120,14 +166,21 @@ class PlaybackEngine:
         checks = []
         reconciled = []
         status, error, step_number = "succeeded", "", 0
+        steps, literal = [], False
         try:
             async with asyncio.timeout(180):
                 async with async_session() as db:
                     r = await db.get(Playback, ident)
                     if r is None:
                         raise RuntimeError("Playback reservation disappeared")
-                    script = Script.model_validate(r.script)
-                for index, step in enumerate(script.steps):
+                    script = load_script(r.script)
+                    literal = isinstance(script, PythonScript)
+                    if isinstance(script, PythonScript):
+                        plan = CodePlan.model_validate(r.result["compiled_plan"])
+                        steps = plan.execution_steps(inputs)
+                    else:
+                        steps = script.steps
+                for index, step in enumerate(steps):
                     step_number = index + 1
                     async with async_session() as db:
                         r = await db.get(Playback, ident)
@@ -139,15 +192,20 @@ class PlaybackEngine:
                             status = "cancelled"
                             break
                     next_check = (
-                        script.steps[index + 1]
-                        if index + 1 < len(script.steps) and script.steps[index + 1].action == "assert_text"
+                        steps[index + 1]
+                        if index + 1 < len(steps) and steps[index + 1].action == "assert_text"
                         else None
                     )
                     if step.action != "assert_text" and next_check is not None:
                         try:
                             async with s.lock:
                                 await s.driver.execute(
-                                    session, next_check, inputs, f"{ident.hex}_{index}_precheck", s.applications
+                                    session,
+                                    next_check,
+                                    inputs,
+                                    f"{ident.hex}_{index}_precheck",
+                                    s.applications,
+                                    literal=literal,
                                 )
                         except DriverFailure as exc:
                             if not exc.condition_absent:
@@ -160,7 +218,9 @@ class PlaybackEngine:
                     while True:
                         try:
                             async with s.lock:
-                                await s.driver.execute(session, step, inputs, f"{ident.hex}_{index}", s.applications)
+                                await s.driver.execute(
+                                    session, step, inputs, f"{ident.hex}_{index}", s.applications, literal=literal
+                                )
                             if step.action == "assert_text":
                                 checks.append({"step": index + 1, "passed": True})
                             break
@@ -179,6 +239,7 @@ class PlaybackEngine:
                                                 inputs,
                                                 f"{ident.hex}_{index}_reconcile",
                                                 s.applications,
+                                                literal=literal,
                                             )
                                         recovered = True
                                         break
@@ -242,7 +303,12 @@ class PlaybackEngine:
             r = await db.get(Playback, ident)
             if r:
                 r.status, r.updated_at = status, now()
+                previous = r.result or {}
+                source_lines = previous.get("compiled_plan", {}).get("source_lines", {})
+                failed_line = source_lines.get(steps[step_number - 1].id) if step_number and literal else None
                 r.result = {
+                    **previous,
+                    "failed_source_line": failed_line if status not in {"succeeded", "cancelled"} else None,
                     "checks": checks,
                     "reconciled_input_steps": reconciled,
                     "error": error,
@@ -284,6 +350,7 @@ class PlaybackEngine:
                     pass
                 r.status, r.updated_at = "unknown", now()
                 r.result = {
+                    **(r.result or {}),
                     "error": "Service restarted during execution. Inspect business results before retrying.",
                     "release_confirmed": released,
                     "evidence": False,

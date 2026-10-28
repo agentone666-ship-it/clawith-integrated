@@ -42,6 +42,12 @@ class Version(AutomationBase):
     digest: Mapped[str] = mapped_column(String(64))
     note: Mapped[str] = mapped_column(String(500), default="")
     tool_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    validation_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("desktop_automation.playbacks.id", use_alter=True, name="fk_automation_version_validation"),
+        nullable=True,
+    )
+    compiler_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 

@@ -10,14 +10,18 @@ import type {
   ActionResult,
   Run,
   Version,
+  RegistryStatus,
 } from "./contracts";
 const base = "/automations";
 const post = <T>(path: string, value: unknown = {}) =>
   request<T>(base + path, { method: "POST", body: JSON.stringify(value) });
 export const automationApi = {
   list: () => request<WorkflowSummary[]>(base),
-  create: (name: string, description: string) =>
-    post<Workflow>("", { name, description }),
+  create: (name: string, description: string, script?: Script) =>
+    post<Workflow>("", { name, description, script }),
+  registry: () => request<RegistryStatus>(base + "/registry"),
+  registerManager: () => post<RegistryStatus>("/registry"),
+  bindManager: (agent_id: string) => post("/registry/bind", { agent_id }),
   detail: (id: string) => request<Workflow>(base + "/" + id),
   save: (w: Workflow, script: Script) =>
     request<Workflow>(base + "/" + w.id, {

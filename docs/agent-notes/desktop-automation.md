@@ -15,3 +15,148 @@ Playback pins the entire script, digest and supplied input summary before execut
 Publication requires an explicit result assertion and a successful trial for the exact current content digest. Published versions cannot be edited. Restore copies a version into a new draft revision. Each version is an ordinary scoped MCP Tool; binding a different version changes only this workflow's assignment on the selected employee. Publication does not automatically upgrade existing assignments. A successful UI assertion is not sufficient evidence of business correctness; benchmark graders independently inspect stored business records.
 
 Validation commands and deployment evidence are in the task handoff and backend test file. The development deployment overlays the older running frontend baseline to avoid replacing unrelated UI behavior, while the review branch targets upstream a1740a7. Nginx uses a graceful reload and retains old hashed assets; the existing backend container is not restarted.
+
+
+## Agent-authored Python and management Tool
+
+The same workflow library now owns `clawith.python.v1` source alongside recorded
+`clawith.cua.v1` steps. The type is derived from its persisted source contract.
+The browser selects RPA recording or Python editing at creation. Recording cannot
+replace a Python draft. Draft revision, trial history, immutable releases,
+version restore and ordinary Agent Tool bindings have one shared owner.
+
+`AutomationRegistry` owns manager operations. Its opt-in `automation_registry`
+MCP Tool supports `sdk`, `list`, `get`, `version`, `observe`, `create`, `update`,
+`test`, `run_status`, `publish`, `bind` and `execute`. UI administrators enable and
+assign it through `/api/automations/registry` and `/registry/bind`. Never enable it
+by default on business employees. A management call verifies an actual held Run,
+matching Agent/tenant, enabled Tool/assignment, and active `origin_user_id`.
+Workflow access and Agent configuration use that origin user's existing policy,
+never the workflow owner's identity. A manager calling `execute` must also have
+the particular published version Tool assigned. Playback enforces assignment at
+its own boundary so bypassing an MCP preflight does not bypass authorization.
+
+Python is a bounded planning language, not host code execution. The `automation`
+SDK exposes `ui` and string `inputs`; pure computation/loops/branches generate at
+most 120 literal actions. It does not read live GUI state inside Python. Agents
+observe through the management Tool first, or adapt validated recorded steps.
+RPA `get`/`version` also returns `python_template`: a mechanical translation
+that preserves action order, window identities, coordinates, input references
+and result checks. Agents add derived values to their local `inputs` dictionary
+before this sequence. Oversized templates or mixed secret interpolation are
+explicitly omitted; paginated RPA reads remain available. This scaffold does
+not choose business values or invent controls; the Agent authors calculations
+and must run a real trial.
+Configured applications, fresh window lookup, relative coordinates, assertions,
+uncertain input reconciliation and cleanup are shared with RPA playback.
+Literal Python output is never interpreted as RPA `${parameter}` placeholders.
+Secret inputs stay out of the compiler: opaque references can only be passed
+straight to `ui.type_text`; the executor substitutes actual values in memory.
+Submitted values may still be visible in the target application/screenshots.
+
+`compiler_gateway` is a host-only authenticated provider bound to the private
+Docker bridge. It resolves an immutable Python image ID and compiles in temporary
+containers: no network, no host mounts/credentials, read-only root, UID65534,
+128MiB memory, 0.5 CPU, PID16, 3 CPU-second and 10 wall-second bounds, 8MiB tmpfs,
+256KiB output limit and two concurrent slots. The gateway alone has Docker
+access; never mount that socket into the capability or user containers. AST
+restrictions provide SDK feedback; the container is the execution isolation
+boundary. Docker containers share the host kernel; this is not a hostile
+multi-tenant VM isolation claim. Stop/reconcile a compile container if provider
+cleanup is ever unconfirmed. A compiler service restart while compiling can
+leave a bounded container to be reclaimed by its provider operator.
+
+The capability sends non-secret inputs and source to `AUTOMATION_COMPILER_URL`,
+authenticating with `AUTOMATION_COMPILER_TOKEN_FILE`. The image ID and worker
+source hash form `compiler_fingerprint`. Publication records that fingerprint
+and `validation_run_id` using the independent `002_script_publication_proof`
+migration. Old RPA releases need neither field. Source/schema changes require a
+new successful draft test. Published Python execution refuses a changed compiler
+fingerprint; revalidate/publish instead of silently changing the SDK. A version
+pins source and SDK identity; each call recomputes its plan for current inputs.
+A passing input does not establish all possible branches or business correctness.
+
+Compile failures produce durable failed trial receipts before any desktop
+claim, with diagnostic code/message/source line and `desktop_started=false`.
+Runtime failures identify the action and Python source line, with evidence and
+release status independent. Trial responses omit the persisted compiled plan;
+it is retained internally without secret values for diagnosis. Source and RPA
+step reads are paginated for model context. The advertised MCP schema in
+`registry_schema` explicitly types objects and inlines step definitions. A real
+Qwen3.5-flash trial repeatedly encoded nested `$ref`/union script parameters as
+strings; the inline contract fixes that integration failure without changing
+the Runtime. Backend Pydantic validation remains authoritative, and field
+errors omit raw submitted source. Do not reintroduce opaque references into the
+model-facing schema without a real Runtime regression trial. Test and execute calls wait for the
+shared executor and also expose run IDs for status lookup. A lost MCP response
+must be reconciled using the same request ID, never a fresh business write.
+
+Focused verification:
+
+```sh
+PYTHONPATH=.:../../test-deps .venv/bin/python -m pytest -q tests/test_desktop_automation.py tests/test_automation_registry.py
+.venv/bin/ruff check app/services/desktop_automation app/api/desktop_automation.py tests/test_desktop_automation.py tests/test_automation_registry.py
+.venv/bin/pyright --pythonpath .venv/bin/python --pythonversion 3.12 app/services/desktop_automation app/api/desktop_automation.py
+npx tsc --noEmit
+npx eslint src/pages/automations --max-warnings 0
+```
+
+The local `test-deps` path supplies SQLite support in the task checkout; normal
+`uv sync --extra dev` installs the declared `aiosqlite` dev dependency. Production
+still uses PostgreSQL. Runtime GUI proof requires the actual isolated Windows
+provider and independent fixture record grader, not these unit fixtures.
+
+
+### Development deployment evidence (2026-10-28 UTC)
+
+The capability and conservative frontend overlay are deployed on development
+port 3009. Live Runtime migration remains `f061_enterprise_info_tenant_id`;
+feature migration is `002_script_publication_proof`. The review checkout's
+unmodified main migration head is `f066_employee_blueprints`. Existing backend
+container `d4a1332f5e62` started on October 26 and was not restarted. The compiler
+is an enabled host systemd service; its token is a private file, never committed.
+Backend capability/API file hashes were compared against the deployed container.
+
+The real model was the development pool's `qwen3.5-flash`, not a Codex-generated
+business script. Two initial 30-call trials did not complete: nested source
+arguments were encoded as strings, followed by code and coordinate mistakes.
+The inline schema fixed native object submission; source-line feedback let the
+model repair a real `NameError` at line 30. That alone did not prevent guessed
+coordinates or omitted modal confirmation. With the mechanical RPA template,
+the model authored supplier filtering, Decimal tax/freight calculation and reason
+text, retained 18 verified GUI actions, tested, published and bound the version.
+This final authoring trial completed in 7 calls/93.165 seconds (one bind argument
+error corrected). Its GUI execution took 18.582 seconds; the independent fixture
+verified every saved record field. This is one synthetic business scenario,
+not a benchmark-wide success rate or proof of unattended general code ability.
+
+Reviewable example:
+- Workflow `360176b8-19b5-4ec9-a24a-958e8e2ff1c3`
+- Version `8c423a0e-5f33-40e6-97b6-62df7bdff509` (v1)
+- Published Tool `a9de5be6-42e8-4c06-9df0-3f440e7d2705`
+- Successful author trial `47c7d96a-c82a-4975-98e0-5470c7e88336`
+- Coding Agent Run `b633130d-848b-409e-86ce-2378d7dd658e`
+- Business Agent Run `5b5e15e5-0042-46d8-ae4d-ee6a35b2ab85`
+
+A separate Qwen business Agent, with only the version execution Tool, used fresh
+quantity/unit-price inputs and called twice with one operation ID. Both calls
+succeeded with one playback `157d9f2a-7e2d-4c72-8127-22b98ab0c99e` and exactly one
+saved business record. Independent grading verified the new 60642.80 total,
+supplier, quantity, reference, date and reason. The physical desktop was released.
+After final backend replacement, both an existing RPA workflow and the published
+Python version passed another fresh-input GUI/business-record regression.
+
+Headless browser verification covered Python creation/editing, failed source
+line display, refusal to publish untested source, RPA/Python library filters,
+published version display and management Tool assignment. No page errors were
+observed. All GUI/provider tests ran on the server's isolated Windows desktop;
+the user's Mac foreground screen was untouched. Server sandbox tests covered
+valid compilation, syntax-line feedback, denied unsupported imports, a bounded
+infinite loop and removal of temporary containers. Final audit found no active
+recordings/playbacks or leftover compiler/test-browser containers.
+
+Focused local verification passed 36 tests (20 existing, 16 new), Ruff, targeted
+Pyright, frontend TypeScript/ESLint and the deployment-baseline production build.
+A pre-existing Pydantic deprecation warning remains in sandbox config. Raw
+non-credential evidence is retained in the task's `registry-*.json` and screenshots,
+with server copies under its existing studio deployment directory.

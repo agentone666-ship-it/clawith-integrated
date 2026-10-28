@@ -106,8 +106,8 @@ class CuaDriver:
             "height": meta.get("screenshot_height", 800),
         }
 
-    async def find(self, session: str, target: Target, inputs: dict[str, str]) -> dict:
-        title = render(target.title, inputs)
+    async def find(self, session: str, target: Target, inputs: dict[str, str], *, literal: bool = False) -> dict:
+        title = target.title if literal else render(target.title, inputs)
         candidates = [
             w
             for w in await self.windows(session)
@@ -149,7 +149,14 @@ class CuaDriver:
         return step
 
     async def execute(
-        self, session: str, step: Step, inputs: dict[str, str], request_id: str, applications: dict[str, dict]
+        self,
+        session: str,
+        step: Step,
+        inputs: dict[str, str],
+        request_id: str,
+        applications: dict[str, dict],
+        *,
+        literal: bool = False,
     ) -> dict:
         if step.action == "launch_app":
             app = applications.get(step.app)
@@ -161,13 +168,13 @@ class CuaDriver:
         if step.action == "assert_text":
             if step.target is None:
                 raise DriverFailure("A verification step must identify its window")
-            w = await self.find(session, step.target, inputs)
+            w = await self.find(session, step.target, inputs, literal=literal)
             result = await self.call(
                 session,
                 "get_window_state",
                 {"pid": w["pid"], "window_id": w["window_id"], "timeout_ms": 10000, "max_elements": 800},
             )
-            expected = render(step.text, inputs)
+            expected = step.text if literal else render(step.text, inputs)
             if expected not in result_text(result):
                 raise DriverFailure(
                     "Expected text was not found in the target window: " + expected[:160], condition_absent=True
@@ -175,7 +182,7 @@ class CuaDriver:
             return result
         params: dict = {"scope": "desktop", "delivery_mode": "foreground"}
         if step.target and step.action in {"click", "double_click", "right_click"}:
-            w = await self.find(session, step.target, inputs)
+            w = await self.find(session, step.target, inputs, literal=literal)
             params = {"scope": "desktop", "delivery_mode": "foreground"}
             bounds = w.get("bounds", {})
             if (
@@ -203,10 +210,10 @@ class CuaDriver:
                 "x": step.x - border_x,
                 "y": step.y - border_y,
             }
-        elif step.target and step.action in {"type_text", "press_key", "hotkey"}:
+        elif step.target and step.action in {"type_text", "press_key", "hotkey", "scroll"}:
             # A benign title-bar click foregrounds the resolved window. Input uses
             # desktop mode because Windows UIA hotkey delivery can drop XAML keys.
-            w = await self.find(session, step.target, inputs)
+            w = await self.find(session, step.target, inputs, literal=literal)
             b = w["bounds"]
             await self.frame(session)
             await self.call(
@@ -225,7 +232,7 @@ class CuaDriver:
                 await self.frame(session)
                 params.update({"x": step.x, "y": step.y})
         elif step.action == "type_text":
-            params["text"] = render(step.text, inputs)
+            params["text"] = step.text if literal else render(step.text, inputs)
         elif step.action in {"press_key", "hotkey"}:
             params.update({"key": step.key, "modifiers": step.modifiers})
         elif step.action == "scroll":

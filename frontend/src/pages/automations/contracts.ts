@@ -27,13 +27,27 @@ export interface Step {
   amount: number;
   timeout_seconds: number;
 }
-export interface Script {
+export interface RpaScript {
   format: "clawith.cua.v1";
   steps: Step[];
   parameters: Record<string, string>;
   secret_parameters: string[];
 }
+export interface PythonScript {
+  format: "clawith.python.v1";
+  source: string;
+  parameters: Record<string, string>;
+  secret_parameters: string[];
+}
+export type Script = RpaScript | PythonScript;
+export interface RegistryStatus {
+  tool_id: string | null;
+  enabled: boolean;
+  name: string;
+  sdk: string;
+}
 export interface WorkflowSummary {
+  kind: "rpa" | "python";
   id: string;
   name: string;
   description: string;
@@ -45,7 +59,7 @@ export interface Recording {
   workflow_id: string;
   status: string;
   paused: boolean;
-  script: Script;
+  script: RpaScript;
   last_seen: string;
 }
 export interface Version {
@@ -70,6 +84,10 @@ export interface Run {
   created_at: string;
   result: {
     error?: string;
+    diagnostic?: { code: string; message: string; line?: number };
+    failed_source_line?: number;
+    compiler_stdout?: string;
+    total_steps?: number;
     failed_step?: number | null;
     seconds?: number;
     evidence?: boolean;
@@ -126,7 +144,7 @@ export function newStep(action: ActionName, changes: Partial<Step> = {}): Step {
     ...changes,
   };
 }
-export function reconcileParameters(script: Script): Script {
+export function reconcileParameters(script: RpaScript): RpaScript {
   const names = new Set(
     script.steps.flatMap((step) =>
       [
@@ -155,3 +173,13 @@ export const actionLabels: Record<ActionName, string> = {
   assert_text: "验证结果",
   launch_app: "打开应用",
 };
+
+export function emptyPython(): PythonScript {
+  return {
+    format: "clawith.python.v1",
+    source:
+      '# 先通过 Agent 管理 Tool 观察独立桌面，再编写操作\nfrom automation import ui, inputs\n\n# w = ui.window("notepad.exe", "*Notepad*")\n# ui.type_text(inputs["text"], target=w)\n# ui.assert_text(inputs["text"], target=w)\n',
+    parameters: {},
+    secret_parameters: [],
+  };
+}
