@@ -7207,6 +7207,7 @@ export default function AgentDetailPage() {
                                                         </div>
                                                     </div>
                                                 )}
+                                                {id && <AgentRunMonitor agentId={id} />}
                                                 <div ref={chatEndRef} />
                                             </div>
                                             {showScrollBtn && (
@@ -7239,7 +7240,6 @@ export default function AgentDetailPage() {
                                                     Connecting...
                                                 </div>
                                             ) : null}
-                                            {id && <div className="chat-live-monitor"><AgentRunMonitor agentId={id} /></div>}
                                             <div ref={chatInputAreaRef} className="chat-input-area" style={{ flexShrink: 0 }}>
                                                 <div className="chat-composer">
                                                     {selectedSessionActiveRun?.pendingToolReconciliations

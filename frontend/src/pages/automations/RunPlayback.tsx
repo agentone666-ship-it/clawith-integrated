@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Run } from "./contracts";
 import { automationApi } from "./api";
 import "./playback.css";
+import { DesktopViewer } from "./DesktopViewer";
 const actionLabels: Record<string, string> = {
   click: "点击",
   double_click: "双击",
@@ -14,6 +15,8 @@ const actionLabels: Record<string, string> = {
   launch_app: "启动应用",
 };
 export function RunPlayback({ run }: { run: Run }) {
+  const [expanded, setExpanded] = useState(false);
+  const closeViewer = useCallback(() => setExpanded(false), []);
   const [selected, setSelected] = useState<number | null>(null);
   const [image, setImage] = useState("");
   const [error, setError] = useState("");
@@ -45,6 +48,28 @@ export function RunPlayback({ run }: { run: Run }) {
       disposed = true;
     };
   }, [run.id, step]);
+  const caption =
+    step === 0
+      ? "最终操作画面"
+      : `第 ${step ?? 0} 步 · 已完成 ${run.progress} 步`;
+  const steps = (
+    <div className="auto-playback-steps">
+      {run.result.evidence && (
+        <button onClick={() => setSelected(0)}>最终画面</button>
+      )}
+      {trace.map((s) => (
+        <button
+          key={s.step}
+          disabled={!s.frame}
+          aria-pressed={step === s.step}
+          onClick={() => setSelected(s.step)}
+        >
+          {s.step}. {actionLabels[s.action] || s.action}
+          {s.x != null ? ` (${s.x}, ${s.y})` : ""}
+        </button>
+      ))}
+    </div>
+  );
   return (
     <section className="auto-playback" aria-label="操作画面">
       <div className="auto-row">
@@ -52,6 +77,13 @@ export function RunPlayback({ run }: { run: Run }) {
           {run.status === "running" ? "正在操作电脑" : "操作回放"}
         </strong>
         <span>已完成 {run.progress} 步</span>
+        <button
+          className="btn btn-secondary"
+          disabled={!image}
+          onClick={() => setExpanded(true)}
+        >
+          放大
+        </button>
         {selected !== null && (
           <button
             className="btn btn-secondary"
@@ -62,30 +94,28 @@ export function RunPlayback({ run }: { run: Run }) {
         )}
       </div>
       {image ? (
-        <img
-          src={image}
-          alt={step === 0 ? "最终操作画面" : `第 ${step} 步操作画面`}
-        />
+        <button
+          className="auto-playback-frame"
+          aria-label="放大桌面画面"
+          onClick={() => setExpanded(true)}
+        >
+          <img src={image} alt={caption} />
+        </button>
       ) : (
         <p>等待首帧…</p>
       )}
       {error && <p role="status">{error}</p>}
-      <div className="auto-playback-steps">
-        {run.result.evidence && (
-          <button onClick={() => setSelected(0)}>最终画面</button>
-        )}
-        {trace.map((s) => (
-          <button
-            key={s.step}
-            disabled={!s.frame}
-            aria-pressed={step === s.step}
-            onClick={() => setSelected(s.step)}
-          >
-            {s.step}. {actionLabels[s.action] || s.action}
-            {s.x != null ? ` (${s.x}, ${s.y})` : ""}
-          </button>
-        ))}
-      </div>
+      {steps}
+
+      {expanded && image && (
+        <DesktopViewer
+          image={image}
+          caption={caption}
+          steps={steps}
+          onClose={closeViewer}
+          onFollow={() => setSelected(null)}
+        />
+      )}
       <small>
         画面按步骤采样；可逐步核对操作路径。截图不代替业务结果校验。
       </small>

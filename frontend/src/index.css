@@ -8306,19 +8306,3 @@ select:focus {
 }
 
 [data-theme="light"] .distill-spinner { color: #A98A5E; }
-
-/* Reserve the composer; running previews consume only the remaining space. */
-.chat-live-monitor {
-  flex: 0 1 auto;
-  min-height: 0;
-  max-height: min(260px, 28vh);
-  overflow: auto;
-  margin: 0 var(--space-4) 4px;
-}
-.chat-live-monitor:empty {
-  display: none;
-}
-.chat-live-monitor .auto-agent-monitor {
-  margin: 0;
-  max-height: none;
-}

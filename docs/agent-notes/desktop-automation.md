@@ -404,3 +404,23 @@ continues to own implementation and verified delivery.
 Scoped ESLint and the production build passed. Live headless readback confirmed
 the system/work/result and optional business slots appear in the actual
 composer, examples are absent and the complete draft fits its auto-grown area.
+
+
+### Uncropped desktop viewer (2026-10-28)
+
+User screenshots showed that the fixed-height footer clipped the desktop image.
+The monitor now belongs to the normal scrollable chat history, with no internal
+fixed-height clipping. The shared Python/RPA frame view scales the entire image
+with contain fitting and opens a body portal for a viewport-filling viewer.
+Fit/1:1 modes allow whole-desktop overview or native-pixel detail with scrolling;
+step selection and follow-latest use the same image state as the inline view.
+Escape closes, focus returns, and the business draft remains untouched.
+No new provider calls, desktop sessions or automatic messages are introduced.
+
+TypeScript, scoped viewer ESLint and production overlay build passed. Live
+server acceptance found the inline monitor at client/scroll height 729/729
+(no internal crop), opened a 1416x876 viewer in a 1440x900 viewport, verified
+contain fitting and exact 1280x800 native-pixel mode, switched actual stored
+step frames, and checked 1017x390 / 780x650 layouts. Escape preserved the
+unsent business draft and left the input inside the viewport; no page errors.
+Screenshots were inspected. No new desktop operation was executed.
