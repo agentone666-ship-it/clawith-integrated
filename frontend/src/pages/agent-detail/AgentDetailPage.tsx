@@ -7207,7 +7207,7 @@ export default function AgentDetailPage() {
                                                         </div>
                                                     </div>
                                                 )}
-                                                {id && <AgentRunMonitor agentId={id} />}
+                                                {id && <AgentRunMonitor agentId={id} sessionId={activeSession?.id ? String(activeSession.id) : undefined} />}
                                                 <div ref={chatEndRef} />
                                             </div>
                                             {showScrollBtn && (

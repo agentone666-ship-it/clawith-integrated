@@ -3,6 +3,13 @@ import type { Run } from "./contracts";
 import { automationApi } from "./api";
 import "./playback.css";
 import { DesktopViewer } from "./DesktopViewer";
+const statusLabels: Record<string, string> = {
+  running: "正在操作电脑",
+  succeeded: "操作回放",
+  failed: "试运行失败",
+  unknown: "结果未确认",
+  cancelled: "已取消",
+};
 const actionLabels: Record<string, string> = {
   click: "点击",
   double_click: "双击",
@@ -73,9 +80,7 @@ export function RunPlayback({ run }: { run: Run }) {
   return (
     <section className="auto-playback" aria-label="操作画面">
       <div className="auto-row">
-        <strong>
-          {run.status === "running" ? "正在操作电脑" : "操作回放"}
-        </strong>
+        <strong>{statusLabels[run.status] || run.status}</strong>
         <span>已完成 {run.progress} 步</span>
         <button
           className="btn btn-secondary"
@@ -102,7 +107,16 @@ export function RunPlayback({ run }: { run: Run }) {
           <img src={image} alt={caption} />
         </button>
       ) : (
-        <p>等待首帧…</p>
+        <p role="status">
+          {run.status === "running"
+            ? "试运行已启动，等待首帧…"
+            : "本次未生成操作画面。"}
+        </p>
+      )}
+      {run.result.error && (
+        <p role="alert" className="auto-error">
+          {run.result.error}
+        </p>
       )}
       {error && <p role="status">{error}</p>}
       {steps}

@@ -223,3 +223,12 @@ export interface AuthoringReadiness {
   offset: number;
   next_offset: number | null;
 }
+
+export interface AgentDesktopActivity {
+  agent_run_id: string;
+  session_id: string;
+  lane_held: boolean;
+  tool_calls: number;
+  created_at: string;
+  playback: Run | null;
+}

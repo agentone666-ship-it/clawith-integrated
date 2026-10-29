@@ -191,3 +191,8 @@ Playback owns step traces and screenshots. Observers must read stored captures
 under existing workflow authorization, never call the live provider or reserve
 a desktop. Capture at most 32 step frames / 32 MiB per run plus the existing final
 screenshot; trace metadata excludes typed text and secret values.
+
+The chat activity projection must scope the latest AgentRun by tenant, origin
+user, Agent and session before loading Tool receipts and that Run's Playback.
+Never substitute a previous Run's captures for a current Run with no trial.
+The projection observes Runtime facts without defining new execution states.

@@ -424,3 +424,30 @@ contain fitting and exact 1280x800 native-pixel mode, switched actual stored
 step frames, and checked 1017x390 / 780x650 layouts. Escape preserved the
 unsent business draft and left the input inside the viewport; no page errors.
 Screenshots were inspected. No new desktop operation was executed.
+
+
+### Current-session desktop activity (2026-10-28)
+
+The chat monitor reads the latest AgentRun for the exact tenant, origin user,
+Agent and selected session, then reads only that Run's Tool receipts and
+Playback. It must not substitute a previous Run's screenshots when the current
+Run has no trial. The read-only activity projection does not change Runtime
+state or reserve a desktop; lane_held is only a scheduling fact, not success.
+A Run without desktop execution explains that no new frames were produced.
+Failed/unknown/cancelled trials without a frame show their actual outcome and
+execution error rather than waiting indefinitely for a first frame.
+
+Live log diagnosis found the latest user Run made zero Tool calls and no trial;
+its answer repeated previous failures. The preceding Run exhausted its model
+step budget after failed trials including unavailable windows, invalid click
+coordinates and an unsupported DesktopPlan.sleep call. This monitor correction
+does not establish that the user's business script is fixed or executed.
+
+Verification: five focused trace/permission tests, TypeScript, scoped ESLint,
+Ruff and the conservative production build passed. The standalone capability
+and frontend were deployed; the main Runtime container ID stayed unchanged.
+A headless browser under the affected user's identity read the actual current
+session and confirmed zero Tools/no trial/no stale frame. A separately marked
+observer-response fixture using the real previous compile failure confirmed
+terminal errors display without infinite waiting. No chat message, trial or
+computer input was dispatched; the business workflow remains unverified.

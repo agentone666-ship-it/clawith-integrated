@@ -13,6 +13,7 @@ import type {
   AssignmentPage,
   AssignmentResult,
   AuthoringReadiness,
+  AgentDesktopActivity,
 } from "./contracts";
 const base = "/automations";
 const post = <T>(path: string, value: unknown = {}) =>
@@ -23,6 +24,14 @@ export const automationApi = {
       base +
         "/authoring?" +
         new URLSearchParams({ search, offset: String(offset) }),
+    ),
+  agentActivity: (agentId: string, sessionId: string) =>
+    request<AgentDesktopActivity | null>(
+      base +
+        "/agent-activity/" +
+        agentId +
+        "?" +
+        new URLSearchParams({ session_id: sessionId }),
     ),
   latestAgentRun: (agentId: string) =>
     request<Run | null>(base + "/agent-runs/" + agentId),

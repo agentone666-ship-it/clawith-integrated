@@ -59,3 +59,7 @@ The authoring entry has no business form. Start carries a bounded read-only Mark
 Composer auto-growth must measure on textarea mount as well as value/width changes; drafts may arrive before the chat UI loads. Keep preview panels in scrollable chat history and reserve composer space without clipping images. Verify the initial handed-off draft without typing, shrink-back, wrapped text, capped scrolling and input/send-button visibility in a short viewport with the preview open.
 
 Desktop monitoring belongs in the scrollable chat content, not in a short clipped footer. Show the entire image with contain scaling and offer a portal-based viewport viewer with fit/1:1 modes, step navigation and Escape/focus restoration. Never crop the desktop to reserve composer space.
+
+Scope the chat monitor to the selected session and latest AgentRun. Explain
+when that Run has no desktop trial; terminal trials without frames must show
+the actual failure instead of an indefinite first-frame waiting message.

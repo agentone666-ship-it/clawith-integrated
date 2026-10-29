@@ -3,9 +3,10 @@
 import base64
 import math
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models.agent_run import AgentRun
+from app.models.agent_tool_execution import AgentToolExecution
 
 from .driver import DriverFailure
 from .models import Playback
@@ -67,3 +68,54 @@ async def latest(engine, db, user, agent_id):
         return None
     await engine.get(db, user, run.id)
     return engine.service.run_view(run)
+
+
+async def activity(engine, db, user, agent_id, session_id):
+    tenant = engine.service.authorize(user)
+    actor = (
+        await db.execute(
+            select(AgentRun)
+            .where(
+                AgentRun.tenant_id == tenant,
+                AgentRun.origin_user_id == user.id,
+                AgentRun.agent_id == agent_id,
+                AgentRun.session_id == session_id,
+            )
+            .order_by(AgentRun.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if not actor:
+        return None
+    count = (
+        await db.execute(
+            select(func.count())
+            .select_from(AgentToolExecution)
+            .where(
+                AgentToolExecution.run_id == actor.id,
+                AgentToolExecution.tenant_id == tenant,
+            )
+        )
+    ).scalar_one()
+    run = (
+        await db.execute(
+            select(Playback)
+            .where(
+                Playback.tenant_id == tenant,
+                Playback.owner_id == user.id,
+                Playback.agent_run_id == actor.id,
+            )
+            .order_by(Playback.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if run:
+        await engine.get(db, user, run.id)
+    return {
+        "agent_run_id": str(actor.id),
+        "session_id": str(actor.session_id),
+        "lane_held": actor.lane_held,
+        "tool_calls": count,
+        "created_at": actor.created_at.isoformat(),
+        "playback": engine.service.run_view(run) if run else None,
+    }

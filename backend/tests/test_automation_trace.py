@@ -56,3 +56,121 @@ async def test_driver_distinguishes_explicit_no_dispatch_from_unknown(fixture, m
     with pytest.raises(DriverFailure) as error:
         await CuaDriver(service.config).call("test", "click", {}, "test-request")
     assert error.value.uncertain is uncertain
+
+
+async def test_activity_is_scoped_to_latest_owned_session_run(fixture):
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import JSON, Column, MetaData, Table
+    from sqlalchemy.dialects.postgresql import JSONB
+
+    from app.models.agent_run import AgentRun
+    from app.models.agent_tool_execution import AgentToolExecution
+    from app.services.desktop_automation.models import Playback
+    from app.services.desktop_automation.trace import activity
+
+    service, engine, sessions = fixture
+    agent, session = uuid.uuid4(), uuid.uuid4()
+    # Runtime JSONB defaults are PostgreSQL-specific. Use equivalent SQLite
+    # storage columns; the production ORM queries and authorization stay real.
+    async with sessions() as db:
+        connection = await db.connection()
+        metadata = MetaData()
+        for model in (AgentRun, AgentToolExecution):
+            Table(
+                model.__tablename__,
+                metadata,
+                *[
+                    Column(
+                        c.name,
+                        JSON() if isinstance(c.type, JSONB) else c.type,
+                        primary_key=c.primary_key,
+                        nullable=True,
+                    )
+                    for c in model.__table__.columns
+                ],
+            )
+        await connection.run_sync(metadata.create_all)
+        w = await workflow(service, db)
+        when = datetime.now(UTC)
+
+        def actor(offset, **overrides):
+            values = {
+                "id": uuid.uuid4(),
+                "tenant_id": USER.tenant_id,
+                "origin_user_id": USER.id,
+                "agent_id": agent,
+                "session_id": session,
+                "source_type": "chat",
+                "goal": "test",
+                "run_kind": "foreground",
+                "runtime_type": "legacy",
+                "runtime_thread_id": "test",
+                "graph_name": "test",
+                "graph_version": "1",
+                "model_turn_limit": 30,
+                "delivery_status": "not_required",
+                "lane_held": False,
+                "created_at": when + timedelta(seconds=offset),
+            }
+            values.update(overrides)
+            return AgentRun(**values)
+
+        old, current = actor(0), actor(1)
+        foreign = [
+            actor(2, origin_user_id=OTHER.id),
+            actor(3, session_id=uuid.uuid4()),
+            actor(4, tenant_id=uuid.uuid4()),
+            actor(5, agent_id=uuid.uuid4()),
+        ]
+        db.add_all([old, current, *foreign])
+        await db.flush()
+        previous = Playback(
+            tenant_id=USER.tenant_id,
+            owner_id=USER.id,
+            workflow_id=w.id,
+            agent_run_id=old.id,
+            request_id="old-trial",
+            digest="old",
+            fingerprint="test",
+            script=sample().model_dump(),
+            status="failed",
+            result={"error": "old failure"},
+        )
+        db.add(previous)
+        await db.commit()
+        value = await activity(engine, db, USER, agent, session)
+        assert value["agent_run_id"] == str(current.id)
+        assert value["tool_calls"] == 0 and value["playback"] is None
+        assert await activity(engine, db, USER, agent, uuid.uuid4()) is None
+        other_value = await activity(engine, db, OTHER, agent, session)
+        assert other_value["agent_run_id"] == str(foreign[0].id)
+        assert other_value["playback"] is None
+
+        trial = Playback(
+            tenant_id=USER.tenant_id,
+            owner_id=USER.id,
+            workflow_id=w.id,
+            agent_run_id=current.id,
+            request_id="current-trial",
+            digest="new",
+            fingerprint="test",
+            script=sample().model_dump(),
+            status="failed",
+            result={"error": "Compiler rejected unsupported sleep"},
+        )
+        receipt = AgentToolExecution(
+            tenant_id=USER.tenant_id,
+            run_id=current.id,
+            tool_call_id="call-1",
+            tool_name="desktop_automation",
+            status="failed",
+            assistant_message_id="message-1",
+            arguments_hash="test",
+        )
+        db.add_all([trial, receipt])
+        await db.commit()
+        value = await activity(engine, db, USER, agent, session)
+        assert value["tool_calls"] == 1
+        assert value["playback"]["id"] == str(trial.id)
+        assert value["playback"]["result"]["error"] == "Compiler rejected unsupported sleep"

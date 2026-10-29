@@ -244,3 +244,10 @@ async def latest_agent_playback(req: Request, agent_id: uuid.UUID, user: Current
     from app.services.desktop_automation.trace import latest
 
     return await latest(req.app.state.desktop_playback, db, user, agent_id)
+
+
+@router.get("/agent-activity/{agent_id}")
+async def agent_activity(req: Request, agent_id: uuid.UUID, session_id: uuid.UUID, user: CurrentUser, db: DBSession):
+    from app.services.desktop_automation.trace import activity
+
+    return await activity(req.app.state.desktop_playback, db, user, agent_id, session_id)
