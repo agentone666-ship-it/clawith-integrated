@@ -392,3 +392,15 @@ Scoped ESLint and the production TypeScript/build passed. A server headless
 readback verified the actual composer text has one placeholder, everyday business
 wording and no old script/test-environment/Tool-publication headings; the complete
 new draft fits its auto-grown input. No chat message or desktop task was sent.
+
+
+### Explicit fill-in kickoff (2026-10-28)
+
+The business kickoff uses inline slots for system, recurring work and expected
+result, plus one optional business-requirements slot. The example and descriptive
+tutorial are removed. The user edits the slots directly; the read-only spec
+continues to own implementation and verified delivery.
+
+Scoped ESLint and the production build passed. Live headless readback confirmed
+the system/work/result and optional business slots appear in the actual
+composer, examples are absent and the complete draft fits its auto-grown area.

@@ -71,7 +71,7 @@ export function AgentAuthoringGuide({ workflow, onClose }: Props) {
   const handleStart = () => {
     if (!page || !agent) return;
     const text =
-      "我想把这项经常重复的工作交给你：\n【请填写】\n描述时可以参考：在哪个系统里操作、平时要做哪些事、最后希望得到什么结果。比如：在采购系统里查找申请单，核对供应商和金额，然后保存采购草稿。\n请帮我做成以后能重复使用的流程，先验证结果，再告诉我怎么用；缺少必要信息时再问我。";
+      "请帮我在【系统名称或网址】中，自动完成【具体工作】，最终得到【期望结果】。\n我的业务要求是：【请补充操作步骤、判断规则或注意事项，不清楚的地方可以留空】\n做好后请先验证结果，再告诉我以后怎么重复使用。";
     navigate(`/agents/${agent.id}/chat`, {
       state: {
         composerHandoff: {
