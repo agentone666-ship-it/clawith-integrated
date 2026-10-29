@@ -71,7 +71,7 @@ export function AgentAuthoringGuide({ workflow, onClose }: Props) {
   const handleStart = () => {
     if (!page || !agent) return;
     const text =
-      "请按附件规范交付固定脚本。\n业务目标：【请填写】\n测试数据或测试环境：【请填写；没有可先提交草稿】\n交付要求：验证通过后发布 Tool。";
+      "我想把这项经常重复的工作交给你：\n【请填写】\n描述时可以参考：在哪个系统里操作、平时要做哪些事、最后希望得到什么结果。比如：在采购系统里查找申请单，核对供应商和金额，然后保存采购草稿。\n请帮我做成以后能重复使用的流程，先验证结果，再告诉我怎么用；缺少必要信息时再问我。";
     navigate(`/agents/${agent.id}/chat`, {
       state: {
         composerHandoff: {

@@ -378,3 +378,17 @@ send button remained inside the viewport. Initial-mount, typing, deletion,
 wrapping, scrolling and preview-layout checks passed with no page errors.
 TypeScript, targeted hook ESLint and the conservative production build passed;
 only frontend assets were replaced. Screenshots were visually inspected.
+
+
+### Business-language kickoff copy (2026-10-28)
+
+The editable kickoff now asks for one repeated daily task in ordinary business
+language: system, usual operations and desired result, with a purchase-draft
+example. Only one placeholder remains. Technical choices, test-environment
+configuration and Tool publication terminology are removed from the user-facing
+template; the read-only Agent specification retains those delivery obligations.
+
+Scoped ESLint and the production TypeScript/build passed. A server headless
+readback verified the actual composer text has one placeholder, everyday business
+wording and no old script/test-environment/Tool-publication headings; the complete
+new draft fits its auto-grown input. No chat message or desktop task was sent.
