@@ -33,6 +33,13 @@ export const automationApi = {
         "?" +
         new URLSearchParams({ session_id: sessionId }),
     ),
+  liveFrame: (id: string) =>
+    request<{
+      image: string;
+      mime: string;
+      sequence: string;
+      captured_at: string;
+    }>(base + "/runs/" + id + "/live"),
   latestAgentRun: (agentId: string) =>
     request<Run | null>(base + "/agent-runs/" + agentId),
   runFrame: (id: string, step: number) =>

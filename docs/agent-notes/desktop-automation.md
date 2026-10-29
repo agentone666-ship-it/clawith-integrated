@@ -578,3 +578,39 @@ business write was produced. This verifies the model/Tool/entry path, not a
 new successful purchase trial. The original business draft had since become
 revision13 and still has separate business-state trial failures. Screenshots
 were inspected; main Runtime/provider policy was not replaced.
+
+
+### Execution-time cloud desktop view (2026-10-29)
+
+Playback now owns a latest-frame sampler for the duration of execution, using
+its existing provider identity and lock. The first frame is stored before the
+running reservation commits; the sampler refreshes around0.8s between provider
+actions and assertion polls. Slow provider calls can delay captures; timestamps
+are displayed instead of implying continuous video. Only one bounded8MiB PNG
+is retained (atomic replacement); the existing bounded step/final evidence
+remains for historical replay. The sampler is cancelled and joined before
+final evidence and lease release on success, failure and cancellation.
+
+The authenticated live-frame endpoint checks existing tenant/workflow authority
+and reads a file descriptor/mtime pair, never calls the driver or takes a
+desktop session. Agent and manual trial viewers share the same default running
+view: poll the current frame approximately once per second, keep the viewport
+viewer updating, and expose the capture time. Selecting a historical step
+pauses follow mode; returning to live resumes it. Terminal runs use stored
+playback. The Agent activity observer refreshes every1s and remains scoped to
+the current exact session/Run. A read-only model task without desktop execution
+still produces no live desktop stream.
+
+Verification:26 focused executor/trace tests, scoped Pyright, ESLint and the
+production TypeScript/build passed. The blocked-executor regression reads the
+first frame while the task remains unfinished, rejects a different owner and
+confirms no sampler/file updates after completion/release. Live acceptance used
+the existing MiniMax Agent/Runtime on isolated Windows: Run
+41311252-3138-4613-b160-bda15eb65b14 completed2 management Tool calls in42.507s.
+The prepared diagnostic workflow checks the application header and cycles focus
+without entering or saving business data. A real browser in that exact chat
+observed4 changing images while the Playback API still reported running, with
+continued updates in the large viewer, a1017x390 check and automatic transition
+to stored replay afterward. No page errors. The independent capability and
+frontend were updated while idle; the main Runtime container was unchanged.
+This proves execution-time visibility, not a business-task success rate.

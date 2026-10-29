@@ -149,7 +149,10 @@ class PlaybackEngine:
             # Provider claim is the physical desktop authority. A DB reservation
             # alone must not publish a running operation on an occupied desktop.
             try:
-                await self.service.driver.frame("play_" + r.id.hex)
+                initial_frame = await self.service.driver.frame("play_" + r.id.hex)
+                from .live import store
+
+                store(self.service, r.id, initial_frame)
             except DriverFailure as exc:
                 fail(409, str(exc))
             db.add(r)
@@ -167,6 +170,9 @@ class PlaybackEngine:
         reconciled = []
         status, error, step_number = "succeeded", "", 0
         steps, literal = [], False
+        from .live import pump
+
+        sampler = asyncio.create_task(pump(s, ident, session))
         try:
             async with asyncio.timeout(180):
                 async with async_session() as db:
@@ -278,6 +284,14 @@ class PlaybackEngine:
             status, error = (
                 "failed",
                 "Desktop execution encountered an internal error; inspect the failed step before retrying.",
+            )
+        sampler.cancel()
+        outcomes = await asyncio.gather(sampler, return_exceptions=True)
+        if isinstance(outcomes[0], Exception):
+            import logging
+
+            logging.getLogger(__name__).error(
+                "Desktop live sampler failed for %s: %s", ident, type(outcomes[0]).__name__
             )
         evidence, release_confirmed = False, False
         try:

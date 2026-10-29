@@ -174,3 +174,33 @@ async def test_activity_is_scoped_to_latest_owned_session_run(fixture):
         assert value["tool_calls"] == 1
         assert value["playback"]["id"] == str(trial.id)
         assert value["playback"]["result"]["error"] == "Compiler rejected unsupported sleep"
+
+
+async def test_live_frame_is_readable_before_completion_without_observer_desktop_access(fixture):
+    import asyncio
+
+    from app.services.desktop_automation.live import latest_frame
+
+    service, engine, sessions = fixture
+    service.driver.block = asyncio.Event()
+    async with sessions() as db:
+        w = await workflow(service, db)
+        value = await engine.start(db, USER, w.id, {"order_id": "LIVE"}, "live-before-completion")
+    ident = uuid.UUID(value["id"])
+    await service.driver.dispatched.wait()
+    assert not service.tasks[ident].done()
+    async with sessions() as db:
+        before = list(service.driver.inputs)
+        image = await latest_frame(engine, db, USER, ident)
+        assert image["image"] and image["captured_at"] and image["sequence"]
+        assert not service.tasks[ident].done()
+        assert service.driver.inputs == before
+        with pytest.raises(HTTPException):
+            await latest_frame(engine, db, OTHER, ident)
+    service.driver.block.set()
+    await service.tasks[ident]
+    path = service.config.evidence_dir / str(ident) / "live.png"
+    version = path.stat().st_mtime_ns
+    await asyncio.sleep(0.9)
+    assert path.stat().st_mtime_ns == version
+    assert not service.driver.owners

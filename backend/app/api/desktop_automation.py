@@ -251,3 +251,10 @@ async def agent_activity(req: Request, agent_id: uuid.UUID, session_id: uuid.UUI
     from app.services.desktop_automation.trace import activity
 
     return await activity(req.app.state.desktop_playback, db, user, agent_id, session_id)
+
+
+@router.get("/runs/{ident}/live")
+async def live_frame(req: Request, ident: uuid.UUID, user: CurrentUser, db: DBSession):
+    from app.services.desktop_automation.live import latest_frame
+
+    return await latest_frame(req.app.state.desktop_playback, db, user, ident)

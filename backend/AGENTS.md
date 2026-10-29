@@ -200,3 +200,7 @@ The projection observes Runtime facts without defining new execution states.
 Management launch is restricted to server-configured application IDs and genuine
 active Runtime identities; it reuses the serialized observer lease and release
 path. Return screenshots as MCP image blocks, outside the text budget.
+
+Execution-time latest frames are captured only by the Playback owner using its
+existing lease. Cancel/join the sampler before release. Observer live endpoints
+read bounded stored frames under workflow authorization and never call Cua.

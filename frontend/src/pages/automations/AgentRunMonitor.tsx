@@ -27,7 +27,7 @@ export function AgentRunMonitor({
       } catch {
         if (!stopped) setError("无法刷新桌面运行状态，请稍后重试");
       }
-      if (!stopped) timer = setTimeout(poll, 2000);
+      if (!stopped) timer = setTimeout(poll, 1000);
     };
     void poll();
     return () => {

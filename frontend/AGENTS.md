@@ -75,3 +75,8 @@ resolves that ID from the current user's authorized session list, or hydrates a
 new empty POST receipt after the native runtime-state API re-authorizes it;
 missing IDs must not fall back to a different conversation. Creation failure stays in
 the guide, and startup never sends the staged business draft automatically.
+
+A running desktop trial defaults to the live latest-frame endpoint, with capture
+time and continued updates in the large viewer. Do not wait for Tool completion
+or substitute final evidence while running. Historical step selection can pause
+live following; the explicit return-to-live control restores it.

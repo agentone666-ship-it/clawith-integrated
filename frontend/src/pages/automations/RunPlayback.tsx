@@ -27,6 +27,33 @@ export function RunPlayback({ run }: { run: Run }) {
   const [selected, setSelected] = useState<number | null>(null);
   const [image, setImage] = useState("");
   const [error, setError] = useState("");
+  const live = run.status === "running" && selected === null;
+  const [capturedAt, setCapturedAt] = useState("");
+  useEffect(() => {
+    if (!live) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      if (!document.hidden) {
+        try {
+          const frame = await automationApi.liveFrame(run.id);
+          if (!disposed) {
+            setImage(`data:${frame.mime};base64,${frame.image}`);
+            setCapturedAt(frame.captured_at);
+            setError("");
+          }
+        } catch {
+          if (!disposed) setError("实时画面更新暂时延迟，正在重新连接…");
+        }
+      }
+      if (!disposed) timer = setTimeout(poll, 1000);
+    };
+    void poll();
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
+  }, [run.id, live]);
   const trace = run.result.trace || [];
   const frames = trace.filter((s) => s.frame);
   const step =
@@ -35,7 +62,7 @@ export function RunPlayback({ run }: { run: Run }) {
       ? 0
       : frames[frames.length - 1]?.step);
   useEffect(() => {
-    if (step === undefined) return;
+    if (live || step === undefined) return;
     let disposed = false;
     void (
       step === 0
@@ -54,9 +81,10 @@ export function RunPlayback({ run }: { run: Run }) {
     return () => {
       disposed = true;
     };
-  }, [run.id, step]);
-  const caption =
-    step === 0
+  }, [run.id, step, live]);
+  const caption = live
+    ? "云电脑实时画面"
+    : step === 0
       ? "最终操作画面"
       : `第 ${step ?? 0} 步 · 已完成 ${run.progress} 步`;
   const steps = (
@@ -80,7 +108,14 @@ export function RunPlayback({ run }: { run: Run }) {
   return (
     <section className="auto-playback" aria-label="操作画面">
       <div className="auto-row">
-        <strong>{statusLabels[run.status] || run.status}</strong>
+        <strong>
+          {live
+            ? "运行中 · 云电脑实时画面"
+            : statusLabels[run.status] || run.status}
+        </strong>
+        {live && capturedAt && (
+          <time>更新于 {new Date(capturedAt).toLocaleTimeString()}</time>
+        )}
         <span>已完成 {run.progress} 步</span>
         <button
           className="btn btn-secondary"
@@ -94,7 +129,7 @@ export function RunPlayback({ run }: { run: Run }) {
             className="btn btn-secondary"
             onClick={() => setSelected(null)}
           >
-            跟随最新
+            {run.status === "running" ? "返回实时" : "跟随最新"}
           </button>
         )}
       </div>
@@ -131,7 +166,9 @@ export function RunPlayback({ run }: { run: Run }) {
         />
       )}
       <small>
-        画面按步骤采样；可逐步核对操作路径。截图不代替业务结果校验。
+        {run.status === "running"
+          ? "运行中自动刷新云电脑画面；可放大查看，选择历史步骤后可返回实时。"
+          : "操作已结束，可逐步查看回放。截图不代替业务结果校验。"}
       </small>
     </section>
   );
