@@ -64,6 +64,7 @@ import AgentDirectory from './AgentDirectory';
 import { AgentRunMonitor } from '../automations/AgentRunMonitor';
 import { ComposerInput } from './ComposerInput';
 import { useComposerHandoff } from './hooks/useComposerHandoff';
+import { resolveCreatedChatSession } from './hooks/composerSession';
 import { useAgentDetailRoute } from './hooks/useAgentDetailRoute';
 import {
     activeRunForSession,
@@ -2275,6 +2276,7 @@ export default function AgentDetailPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const location = useLocation();
+    const requestedSessionId = new URLSearchParams(location.search).get('session');
     const queryClient = useQueryClient();
     const {
         activeTab,
@@ -2777,6 +2779,11 @@ export default function AgentDetailPage() {
         const sess = normalizeChatSession(rawSess);
         const targetAgentId = id;
         if (!targetAgentId) return;
+        if (requestedSessionId && requestedSessionId !== String(sess.id)) {
+            const search = new URLSearchParams(location.search);
+            search.set('session', String(sess.id));
+            navigate(`${location.pathname}?${search}${location.hash}`, { replace: true, state: location.state });
+        }
         const runtimeKey = buildSessionRuntimeKey(targetAgentId, String(sess.id));
         const runtimeState = sessionUiStateRef.current[runtimeKey] || { isWaiting: false, isStreaming: false };
         const cachedActiveRun = sessionActiveRunRef.current[runtimeKey] || null;
@@ -3316,12 +3323,33 @@ export default function AgentDetailPage() {
 
     useEffect(() => {
         if (!id || !token || activeTab !== 'chat') return;
-        fetchMySessions(false, id).then((data: any) => {
-            if (currentAgentIdRef.current !== id) return;
+        let stopped = false;
+        void (async () => {
+            const data = await fetchMySessions(false, id);
+            if (stopped || currentAgentIdRef.current !== id) return;
             setSessionsLoading(false);
-            if (data && data.length > 0) selectSession(data[0], 'mine');
-        });
-    }, [id, token, activeTab, currentUser?.id]);
+            let target = requestedSessionId
+                ? data.find((session: { id: string }) => String(session.id) === requestedSessionId)
+                : data[0];
+            if (!target && requestedSessionId) {
+                try {
+                    target = await resolveCreatedChatSession(location.state, id, viewerUserIdStr(), requestedSessionId);
+                } catch {
+                    if (!stopped) toast.error('无法打开编写会话，请稍后重试。');
+                }
+            }
+            if (stopped || currentAgentIdRef.current !== id) return;
+            if (target) {
+                const selected = normalizeChatSession(target);
+                setSessions((previous) => previous.some((session) => String(session.id) === selected.id) ? previous : [selected, ...previous]);
+                void selectSession(selected, 'mine');
+            } else if (requestedSessionId) {
+                clearChatSelection();
+                toast.error('此会话不存在或无权访问，请从会话列表选择。');
+            }
+        })();
+        return () => { stopped = true; };
+    }, [id, token, activeTab, currentUser?.id, requestedSessionId, location.state]);
 
     const ensureSessionSocket = (sess: any, agentId: string, authToken: string) => {
         const sessionId = String(sess.id);

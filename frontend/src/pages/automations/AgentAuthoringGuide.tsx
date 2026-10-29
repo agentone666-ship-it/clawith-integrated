@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { copyToClipboard } from "../../utils/clipboard";
 import { automationApi } from "./api";
+import { request } from "../../api/request";
 import type { AuthoringReadiness, Workflow } from "./contracts";
 import "./authoring.css";
 
@@ -14,6 +15,14 @@ export function AgentAuthoringGuide({ workflow, onClose }: Props) {
   const [page, setPage] = useState<AuthoringReadiness | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
   const panel = useRef<HTMLElement>(null);
   useEffect(() => {
     let disposed = false;
@@ -68,27 +77,47 @@ export function AgentAuthoringGuide({ workflow, onClose }: Props) {
   }, [onClose]);
   const ready = page?.items.filter((a) => a.ready) || [];
   const agent = ready.find((a) => a.name.includes("脚本工程师")) || ready[0];
-  const handleStart = () => {
-    if (!page || !agent) return;
-    const text =
-      "请帮我在【系统名称或网址】中，自动完成【具体工作】，最终得到【期望结果】。\n我的业务要求是：【请补充操作步骤、判断规则或注意事项，不清楚的地方可以留空】\n做好后请先验证结果，再告诉我以后怎么重复使用。";
-    navigate(`/agents/${agent.id}/chat`, {
-      state: {
-        composerHandoff: {
-          agentId: agent.id,
-          text,
-          document: {
-            name: "AUTOMATION_AGENT.md",
-            text:
-              page.spec_markdown +
-              (workflow
-                ? `\n\n## 可只读参考的流程\n${workflow.id}（${workflow.name}）。新建流程，不得覆盖参考流程。`
-                : ""),
-          },
-          createdAt: Date.now(),
+  const handleStart = async () => {
+    if (!page || !agent || starting) return;
+    setStarting(true);
+    setError("");
+    try {
+      const session = await request<{ id: string }>(
+        `/agents/${agent.id}/sessions`,
+        {
+          method: "POST",
+          body: JSON.stringify({ title: "自动化流程编写" }),
         },
-      },
-    });
+      );
+      if (!active.current) return;
+      const text =
+        "请帮我在【系统名称或网址】中，自动完成【具体工作】，最终得到【期望结果】。\n我的业务要求是：【请补充操作步骤、判断规则或注意事项，不清楚的地方可以留空】\n做好后请先验证结果，再告诉我以后怎么重复使用。";
+      navigate(`/agents/${agent.id}/chat?session=${session.id}`, {
+        state: {
+          createdChatSession: session,
+          composerHandoff: {
+            agentId: agent.id,
+            text,
+            document: {
+              name: "AUTOMATION_AGENT.md",
+              text:
+                page.spec_markdown +
+                (workflow
+                  ? `\n\n## 可只读参考的流程\n${workflow.id}（${workflow.name}）。新建流程，不得覆盖参考流程。`
+                  : ""),
+            },
+            createdAt: Date.now(),
+          },
+        },
+      });
+    } catch (error: unknown) {
+      if (active.current)
+        setError(
+          error instanceof Error ? error.message : "无法创建编写会话，请重试。",
+        );
+    } finally {
+      if (active.current) setStarting(false);
+    }
   };
   const handleCopy = async () => {
     if (!page) return;
@@ -152,10 +181,10 @@ export function AgentAuthoringGuide({ workflow, onClose }: Props) {
           </button>
           <button
             className="btn btn-primary"
-            disabled={!agent}
-            onClick={handleStart}
+            disabled={!agent || starting}
+            onClick={() => void handleStart()}
           >
-            开始编写
+            {starting ? "准备中…" : "开始编写"}
           </button>
         </div>
       </section>

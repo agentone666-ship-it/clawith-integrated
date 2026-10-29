@@ -68,3 +68,10 @@ ComposerInput owns inline auto-growth and viewport editing of the same controlle
 draft. Use the available chat-panel height minus attachments, toolbar and a
 small history reserve; do not restore the old 32vh cap. Large editing preserves
 text, selection, focus and attachment cards and never dispatches a message.
+
+Starting a new automation authoring task creates an empty native chat session
+before navigation and targets it explicitly with ?session=. The chat owner
+resolves that ID from the current user's authorized session list, or hydrates a
+new empty POST receipt after the native runtime-state API re-authorizes it;
+missing IDs must not fall back to a different conversation. Creation failure stays in
+the guide, and startup never sends the staged business draft automatically.

@@ -527,3 +527,54 @@ a993x366 dialog with a959x256.5 text area on the short viewport. Enter inserted 
 newline; Escape/Done preserved content, focus and the Markdown card. Session
 switching retained the controlled draft and auto-growth. No messages were sent
 and no page errors occurred; screenshots were visually inspected.
+
+
+### Fresh authoring session after model truncation (2026-10-29)
+
+Run31e06edd-5afd-49b7-89d7-daf5139bccd1 used MiniMax-M3 with a16384-token
+output cap and failed after two length responses before any Tool execution.
+Read-only reconstruction of its prepared input found84 messages/107463 chars.
+A provider-only comparison retained the same model, Tool schema and output cap:
+fresh system/current-user inputs (2 messages/10820 chars) emitted valid sdk/list
+Tool calls in1.79s with61 output tokens. The historical request with thinking
+disabled emitted valid sdk/get/observe calls in2.94s/130 output tokens. These
+probes executed no Tools; they implicate history/thinking interaction, not an
+inability to call Tools or a demonstrated need for a larger cap. No production
+reasoning policy, output cap, retry count or Runtime core was changed.
+
+Previously Start authoring navigated into whichever old chat loaded first,
+reusing failed test history and repeated business requests. It now creates an
+empty current-user native session via the existing authenticated API before
+navigation, includes its ID in the route, and stages the same Markdown card and
+business draft without auto-send. The chat owner selects the requested ID from its authorized session list.
+The native list intentionally omits empty conversations, so a newly returned
+POST receipt is carried as navigation metadata; before using it the client
+validates recipient fields and asks the native runtime-state endpoint to
+re-authorize that exact tenant/user/Agent/session. The receipt alone cannot
+authorize access. Invalid/missing IDs show an error rather than selecting a
+different conversation. Manual selection keeps an explicit
+session route aligned. Request failure leaves the guide open; closing during
+creation does not navigate afterward (a completed API creation may leave an
+empty session). Native session APIs remain the permission/persistence owner.
+
+The affected script employee still had Qwen as its default, despite the user's
+per-chat override to MiniMax-M3. Its primary model was aligned through the
+normal Agent API with the model selected in the failed Run. Other employees
+and the company model pool were left unchanged. Old chats/checkpoints were
+preserved. This prevents this new-session entry from returning to the known
+Arrearage configuration; it does not promise zero model failures.
+
+Verification: TypeScript, scoped guide/resolver ESLint and the conservative
+production build passed. Live headless acceptance verified creation failure
+stays in the guide, successful startup opens the exact new session with its
+Markdown card and auto-grown draft, and no message is sent until Send. A forged
+empty-session navigation receipt was rejected by the native owner endpoint and
+did not fall back to historical chat. From that real composer, MiniMax-M3 Run
+5ea2f689-fbb6-4541-8a25-0f3ebe340523 completed9 read-only sdk/get/version/run_status
+Tool calls; exact RunStateReader reported completed/error_code=null. Some
+queries encountered a missing-version parameter or read failed historical
+trials; the model corrected the parameter and finished. No new Playback or
+business write was produced. This verifies the model/Tool/entry path, not a
+new successful purchase trial. The original business draft had since become
+revision13 and still has separate business-state trial failures. Screenshots
+were inspected; main Runtime/provider policy was not replaced.
