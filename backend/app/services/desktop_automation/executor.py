@@ -49,6 +49,10 @@ class PlaybackEngine:
             ):
                 fail(422, "Record steps and add a result verification before testing")
             script.validate_inputs(inputs)
+            if isinstance(script, Script) and any(
+                step.action == "assert_text" and step.text.startswith("__PROBE_") for step in script.steps
+            ):
+                fail(422, "不要使用必定失败的 PROBE 断言暂停流程；请用 observe 检查界面，诊断流程应正常结束。")
             if agent_run_id:
                 actor = await db.get(AgentRun, agent_run_id)
                 if actor is None or actor.tenant_id != w.tenant_id or not actor.lane_held:
@@ -106,6 +110,22 @@ class PlaybackEngine:
             if isinstance(script, PythonScript):
                 try:
                     plan, diagnostics = await PythonCompiler(self.service.config).compile(script, inputs)
+                    probe = next(
+                        (
+                            step
+                            for step in plan.steps
+                            if step.action == "assert_text" and step.text.startswith("__PROBE_")
+                        ),
+                        None,
+                    )
+                    if probe is not None:
+                        raise CompilationError(
+                            {
+                                "code": "invalid_probe_assertion",
+                                "message": "不要使用必定失败的 PROBE 断言暂停流程；请用 observe 检查界面，诊断流程应正常结束。",
+                                "line": plan.source_lines.get(probe.id),
+                            }
+                        )
                     if v and diagnostics["compiler_fingerprint"] != v.compiler_fingerprint:
                         raise CompilationError(
                             {"code": "compiler_changed", "message": "Python SDK 环境已改变，请重新测试并发布新版本"}
@@ -202,7 +222,13 @@ class PlaybackEngine:
                         if index + 1 < len(steps) and steps[index + 1].action == "assert_text"
                         else None
                     )
-                    if step.action != "assert_text" and next_check is not None:
+                    # Only the final verification suffix guards the preceding
+                    # input as a completed operation. Intermediate UI states may
+                    # already hold after an earlier read/lookup.
+                    transition_check = next_check is not None and all(
+                        item.action == "assert_text" for item in steps[index + 1 :]
+                    )
+                    if step.action != "assert_text" and transition_check and next_check is not None:
                         try:
                             async with s.lock:
                                 await s.driver.execute(
@@ -231,7 +257,7 @@ class PlaybackEngine:
                                 checks.append({"step": index + 1, "passed": True})
                             break
                         except DriverFailure as exc:
-                            if exc.uncertain and next_check is not None:
+                            if exc.uncertain and transition_check and next_check is not None:
                                 # No input retry: only an explicitly recorded,
                                 # previously absent postcondition can reconcile it.
                                 recovery_deadline = time.monotonic() + next_check.timeout_seconds

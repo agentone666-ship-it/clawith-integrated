@@ -614,3 +614,69 @@ continued updates in the large viewer, a1017x390 check and automatic transition
 to stored replay afterward. No page errors. The independent capability and
 frontend were updated while idle; the main Runtime container was unchanged.
 This proves execution-time visibility, not a business-task success rate.
+
+
+### Intermediate-state precheck false positive (2026-10-29)
+
+The executor previously prechecked every assertion immediately following any
+input and rejected the input if that text already existed. This incorrectly
+blocked repeatable intermediate lookups/window preparation, e.g. data-loaded
+and preview states. Scope that operation-transition guard to the verification
+suffix at the end of a plan: only when all remaining steps are assertions.
+Intermediate UI checks still execute and can poll for actual presence. This
+retains the preceding final-commit input's precheck and exact request-ID
+idempotency; it is not a business-record deduplication engine and does not
+guarantee idempotency for arbitrary multi-write scripts. Business systems must
+retain their own record uniqueness checks. Script formats/digests and compiler
+identity remain unchanged, so fixed published versions are not invalidated.
+
+Unknown intermediate inputs no longer reconcile using a pre-existing UI state.
+Only a terminal postcondition proven absent before dispatch can reconcile an
+unknown input; otherwise stop unknown without resending input. The final
+verification's unreadable precondition still fails closed.
+
+The authoring spec forbids PROBE sentinel assertions as a debugging stop. Use
+observe for UI text/screenshots, or a clearly named diagnostic draft that first
+checks the window/header, performs read/query actions, ends normally and is
+followed by observe. A diagnostic trial is not a successful business delivery
+and must not replace/publish the main business draft. Historical failed rows
+are preserved rather than reclassified as success.
+
+Regression coverage: already-present intermediate state permits progress;
+already-present final saved state prevents commit input; unknown intermediate
+dispatch cannot use an old state as reconciliation. Fifty focused executor,
+trace and registry tests passed, plus Ruff and targeted Pyright.
+
+PROBE sentinel assertions are also rejected at the trial boundary before
+physical desktop claim: RPA returns actionable422, and compiled Python records
+invalid_probe_assertion with its source line and desktop_started=false. This
+only rejects the reserved debug sentinel prefix, not arbitrary legitimate UI
+text. It does not revalidate/erase historical receipts or change serialization
+and digests. Fifty-two focused tests and targeted static checks passed.
+
+An attempted autonomous MiniMax repair (Run9f384477-b032-4657-b7eb-051997c9c8bd)
+did not converge on the requested business draft and was explicitly cancelled
+after17 Tool calls; cancellation was independently observed applied with the
+lane released. No successful business trial was produced by that attempt.
+The subsequent controlled repair uses the existing validated v2 action path
+through the normal authenticated workflow API, with independent business
+record validation on a separate synthetic dataset. Do not attribute that
+controlled repair to autonomous model success.
+
+Controlled acceptance completed on the isolated Windows desktop. An initial
+trial stopped unknown at reason entry because old Confirm Purchase / duplicate
+save dialogs blocked the parent window. No new record was saved for that
+dataset; the remainder was not resent. After reading and closing those exact
+dialogs, a fresh independent dataset succeeded through all22 steps: Playback
+252a7d5a-2b4a-4a98-aff7-d831f84423fb, request PR-0093-027. Independent persisted
+record checks confirmed exactly1 purchase, supplier华东液压, quantity1010,
+amount115391.30, date2026-11-10, drawing reference and both exclusion reasons.
+The business workflow3b71d39e-6dfb-4fbe-ab8a-3bec4b2da502 revision4 was published
+as v1 (42102e6b-cb4b-4372-8f90-6c60aa0ef657); a fresh API read confirmed its
+source matches the validated draft. The diagnostic60782028-8135-4b88-93d9-d0c711f3dc79
+was separately repaired to a normally terminating read/query workflow and
+passed Playback a138c8e7-cf1a-4086-bb84-6de3e19b7d8a without adding records.
+Original fixture bytes were restored, saved test evidence retained. Only the
+capability container was replaced; main Runtime was unchanged. This proves
+this controlled task, not autonomous model repair reliability or recovery from
+arbitrary leftover modals. Historical failures remain unchanged.

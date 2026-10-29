@@ -430,3 +430,84 @@ async def test_failed_precondition_read_is_not_proof_of_absence(fixture, monkeyp
         assert r.status == "failed"
         assert not service.driver.inputs
         assert not service.driver.owners
+
+
+@pytest.mark.parametrize("already_saved", [False, True])
+async def test_intermediate_state_is_repeatable_but_final_write_stays_guarded(fixture, monkeypatch, already_saved):
+    service, play, sessions = fixture
+    inputs = []
+
+    async def execute(session, step, values, request_id, applications, **kwargs):
+        if step.action == "assert_text":
+            if step.text == "保存成功" and not already_saved and "commit" not in inputs:
+                raise DriverFailure("not saved", condition_absent=True)
+            return {}
+        inputs.append(step.text)
+        return {}
+
+    monkeypatch.setattr(service.driver, "execute", execute)
+    script = Script(
+        steps=[
+            Step(id="query", action="type_text", target=TARGET, text="lookup"),
+            Step(id="loaded", action="assert_text", target=TARGET, text="资料已加载"),
+            Step(id="save", action="type_text", target=TARGET, text="commit"),
+            Step(id="saved", action="assert_text", target=TARGET, text="保存成功"),
+        ]
+    )
+    async with sessions() as db:
+        w = await workflow(service, db, script)
+        result = await play.start(db, USER, w.id, {}, "transition-guard")
+    await service.tasks[uuid.UUID(result["id"])]
+    async with sessions() as db:
+        run = await play.get(db, USER, uuid.UUID(result["id"]))
+        assert run.status == ("failed" if already_saved else "succeeded")
+        assert inputs == (["lookup"] if already_saved else ["lookup", "commit"])
+        if already_saved:
+            assert "already passes" in run.result["error"]
+        assert not service.driver.owners
+
+
+async def test_unknown_intermediate_input_cannot_use_an_old_state_as_reconciliation(fixture, monkeypatch):
+    service, play, sessions = fixture
+    sent = []
+
+    async def execute(session, step, values, request_id, applications, **kwargs):
+        if step.action == "assert_text":
+            return {}
+        sent.append(step.text)
+        raise DriverFailure("dispatch outcome unknown", uncertain=True)
+
+    monkeypatch.setattr(service.driver, "execute", execute)
+    script = Script(
+        steps=[
+            Step(id="query", action="type_text", target=TARGET, text="lookup"),
+            Step(id="loaded", action="assert_text", target=TARGET, text="资料已加载"),
+            Step(id="save", action="type_text", target=TARGET, text="commit"),
+            Step(id="saved", action="assert_text", target=TARGET, text="保存成功"),
+        ]
+    )
+    async with sessions() as db:
+        w = await workflow(service, db, script)
+        result = await play.start(db, USER, w.id, {}, "unknown-intermediate")
+    await service.tasks[uuid.UUID(result["id"])]
+    async with sessions() as db:
+        run = await play.get(db, USER, uuid.UUID(result["id"]))
+        assert run.status == "unknown"
+        assert sent == ["lookup"]
+        assert run.result["reconciled_input_steps"] == []
+
+
+async def test_probe_assertion_is_rejected_before_desktop_input(fixture):
+    service, play, sessions = fixture
+    script = Script(
+        steps=[
+            Step(id="type", action="type_text", target=TARGET, text="input"),
+            Step(id="probe", action="assert_text", target=TARGET, text="__PROBE_STOP_BEFORE_SAVE__"),
+        ]
+    )
+    async with sessions() as db:
+        w = await workflow(service, db, script)
+        with pytest.raises(HTTPException) as error:
+            await play.start(db, USER, w.id, {}, "reject-debug-stop")
+        assert error.value.status_code == 422
+    assert not service.driver.inputs and not service.driver.owners

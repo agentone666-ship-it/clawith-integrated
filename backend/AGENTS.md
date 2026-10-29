@@ -204,3 +204,9 @@ path. Return screenshots as MCP image blocks, outside the text budget.
 Execution-time latest frames are captured only by the Playback owner using its
 existing lease. Cancel/join the sampler before release. Observer live endpoints
 read bounded stored frames under workflow authorization and never call Cua.
+
+Operation-transition prechecks guard the final verification suffix, not every
+intermediate state check. Reconcile unknown input only against a postcondition
+proven absent before dispatch; otherwise stop without replay. Do not represent
+diagnostic sentinel failures as a business delivery or rewrite historical
+failed trial receipts. See the desktop automation note for the precise scope.

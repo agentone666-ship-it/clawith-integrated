@@ -450,3 +450,27 @@ async def test_desktop_observation_mcp_separates_image_from_text_budget(fixture,
     assert result["content"][1]["type"] == "image"
     assert len(result["content"][1]["data"]) > 60000
     assert json.loads(result["content"][0]["text"]) == {"window_count": 1}
+
+
+async def test_compiled_probe_is_diagnosed_before_desktop_claim(fixture, monkeypatch):
+    from test_desktop_automation import TARGET, workflow
+
+    from app.services.desktop_automation.contracts import Step
+
+    service, play, sessions = fixture
+
+    async def compile_probe(self, script, inputs):
+        return CodePlan(
+            steps=[Step(id="probe", action="assert_text", target=TARGET, text="__PROBE_STOP__")],
+            source_lines={"probe": 12},
+        ), {"compiler_fingerprint": "a" * 64}
+
+    monkeypatch.setattr(PythonCompiler, "compile", compile_probe)
+    async with sessions() as db:
+        w = await workflow(service, db, source())
+        value = await play.start(db, USER, w.id, {"quantity": "1", "price": "2"}, "python-reject-debug-stop")
+    assert value["status"] == "failed"
+    assert value["result"]["diagnostic"]["code"] == "invalid_probe_assertion"
+    assert value["result"]["diagnostic"]["line"] == 12
+    assert value["result"]["desktop_started"] is False
+    assert not service.driver.inputs and not service.driver.owners
