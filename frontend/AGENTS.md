@@ -63,3 +63,8 @@ Desktop monitoring belongs in the scrollable chat content, not in a short clippe
 Scope the chat monitor to the selected session and latest AgentRun. Explain
 when that Run has no desktop trial; terminal trials without frames must show
 the actual failure instead of an indefinite first-frame waiting message.
+
+ComposerInput owns inline auto-growth and viewport editing of the same controlled
+draft. Use the available chat-panel height minus attachments, toolbar and a
+small history reserve; do not restore the old 32vh cap. Large editing preserves
+text, selection, focus and attachment cards and never dispatches a message.

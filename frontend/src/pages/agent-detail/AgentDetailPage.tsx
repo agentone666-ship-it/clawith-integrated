@@ -62,7 +62,7 @@ import SkillsTab from './tabs/SkillsTab';
 import ToolsTab from './tabs/ToolsTab';
 import AgentDirectory from './AgentDirectory';
 import { AgentRunMonitor } from '../automations/AgentRunMonitor';
-import { useAutoGrowComposer } from './hooks/useAutoGrowComposer';
+import { ComposerInput } from './ComposerInput';
 import { useComposerHandoff } from './hooks/useComposerHandoff';
 import { useAgentDetailRoute } from './hooks/useAgentDetailRoute';
 import {
@@ -3024,7 +3024,6 @@ export default function AgentDetailPage() {
     const chatHistorySentinelRef = useRef<HTMLDivElement>(null);
     const chatInputRef = useRef<HTMLTextAreaElement>(null);
     useComposerHandoff(id, setChatInput, chatInputRef, setAttachedFiles);
-    const bindChatInput = useAutoGrowComposer(chatInputRef, chatInput);
     const chatInputAreaRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -7365,8 +7364,8 @@ export default function AgentDetailPage() {
                                                         </div>
                                                     )}
                                                     <div className="chat-composer-input-block">
-                                                        <textarea
-                                                            ref={bindChatInput}
+                                                        <ComposerInput
+                                                            inputRef={chatInputRef}
                                                             className="chat-input"
                                                             disabled={showNoModelState || !!selectedSessionActiveRun?.pendingToolReconciliations.length}
                                                             value={chatInput}

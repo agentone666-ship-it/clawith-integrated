@@ -498,3 +498,32 @@ actual workflow and successful v2 trial, displayed its 20 stored frames, opened
 the large viewer, switched to step1 and verified the 1017x390 viewport with no
 page errors. The capability was replaced while idle; main Runtime and model
 were unchanged. No Mac screen control was used.
+
+
+### Long-message composer space (2026-10-29)
+
+The deployed auto-growth hook was still active: initial handoff measured72px,
+pasted business content hit the old288px cap, and a390px viewport reduced the
+cap to125px. This reproduced inadequate editing space, not a missing auto-growth
+handler. The current inline cap is min(560px,60dvh,actual available chat-panel
+space). Available space subtracts attachment/toolbar chrome and reserves up to
+96px of message history. Mount, content, container size, visual viewport and
+font loading remeasure; observers and listeners are released on unmount.
+
+ComposerInput owns the inline input and optional viewport editor of one
+controlled draft. The viewport editor uses Enter for newlines, Escape/Done to
+return, retains the text/selection and Markdown card, restores input focus and
+never calls send. It does not create a second persistent draft or change chat
+intake. The production overlay must copy the hook, component, stylesheet and
+AgentDetail wiring together. This change applies to Agent chat authoring.
+
+Verification: TypeScript, scoped ESLint and the production overlay build passed.
+Live headless acceptance under the affected user's identity measured the
+100-character handoff at72px without scrolling and an810-character pasted task
+at314px fully visible (previously clipped at288px). A60-line draft grew to540px
+and then scrolled internally. In1017x390 and780x650 viewports the textarea was
+173px and390px, with input and Send inside the viewport. The large editor used
+a993x366 dialog with a959x256.5 text area on the short viewport. Enter inserted a
+newline; Escape/Done preserved content, focus and the Markdown card. Session
+switching retained the controlled draft and auto-growth. No messages were sent
+and no page errors occurred; screenshots were visually inspected.
