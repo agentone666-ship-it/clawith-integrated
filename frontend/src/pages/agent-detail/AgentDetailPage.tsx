@@ -62,6 +62,7 @@ import SkillsTab from './tabs/SkillsTab';
 import ToolsTab from './tabs/ToolsTab';
 import AgentDirectory from './AgentDirectory';
 import { AgentRunMonitor } from '../automations/AgentRunMonitor';
+import { useAutoGrowComposer } from './hooks/useAutoGrowComposer';
 import { useComposerHandoff } from './hooks/useComposerHandoff';
 import { useAgentDetailRoute } from './hooks/useAgentDetailRoute';
 import {
@@ -3023,10 +3024,7 @@ export default function AgentDetailPage() {
     const chatHistorySentinelRef = useRef<HTMLDivElement>(null);
     const chatInputRef = useRef<HTMLTextAreaElement>(null);
     useComposerHandoff(id, setChatInput, chatInputRef, setAttachedFiles);
-    useEffect(() => {
-        const el = chatInputRef.current;
-        if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, Math.min(320, window.innerHeight * 0.4)) + 'px'; }
-    }, [chatInput]);
+    const bindChatInput = useAutoGrowComposer(chatInputRef, chatInput);
     const chatInputAreaRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -7241,6 +7239,7 @@ export default function AgentDetailPage() {
                                                     Connecting...
                                                 </div>
                                             ) : null}
+                                            {id && <div className="chat-live-monitor"><AgentRunMonitor agentId={id} /></div>}
                                             <div ref={chatInputAreaRef} className="chat-input-area" style={{ flexShrink: 0 }}>
                                                 <div className="chat-composer">
                                                     {selectedSessionActiveRun?.pendingToolReconciliations
@@ -7301,7 +7300,6 @@ export default function AgentDetailPage() {
                                                                 </div>
                                                             </div>
                                                         ))}
-                                                    {id && <AgentRunMonitor agentId={id} />}
                                                     {(chatUploadDrafts.length > 0 || attachedFiles.length > 0) && (
                                                         <div className="chat-composer-attachments">
                                                             {chatUploadDrafts.map((draft) => (
@@ -7368,16 +7366,12 @@ export default function AgentDetailPage() {
                                                     )}
                                                     <div className="chat-composer-input-block">
                                                         <textarea
-                                                            ref={chatInputRef}
+                                                            ref={bindChatInput}
                                                             className="chat-input"
                                                             disabled={showNoModelState || !!selectedSessionActiveRun?.pendingToolReconciliations.length}
                                                             value={chatInput}
                                                             onChange={e => {
                                                                 setChatInput(e.target.value);
-                                                                // Auto-grow: reset height then expand to scrollHeight
-                                                                const el = e.target;
-                                                                el.style.height = 'auto';
-                                                                el.style.height = el.scrollHeight + 'px';
                                                             }}
                                                             onKeyDown={e => {
                                                                 // Enter sends the message; Shift+Enter inserts a newline

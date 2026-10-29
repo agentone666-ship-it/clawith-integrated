@@ -353,3 +353,28 @@ frontend TypeScript/ESLint and the conservative production build passed. Real
 headless UI verified the MD card, short template, textarea height growing from
 28px to 204px, live Agent frames, RPA live/replay frames, and no page errors.
 Windows and the main Runtime were not replaced; no Mac foreground was used.
+
+
+### Mounted-composer sizing correction (2026-10-28)
+
+A live reproduction found a four-line programmatic draft rendered in a 28px
+textarea with 94px scroll height. The prior value effect could run before the
+textarea mounted; manual-fill tests did not exercise that path. Auto-growth now
+measures in a callback ref on DOM attachment, a layout effect for controlled
+value changes, and a width ResizeObserver/window-resize callback. CSS owns the
+viewport cap; the input and its block cannot flex-shrink. The input keeps a 50px
+minimum and uses internal scrolling after min(320px,32vh).
+
+The desktop preview is a separate shrinking sibling of the input area, bounded
+to min(260px,28vh). It cannot consume the composer's reserved space. No desktop
+provider calls or automatic chat sends are introduced by this correction.
+
+Live development readback after deployment measured the initial handed-off draft
+at 94px with 94px scroll height (previously 28/94), short content at 50px, nine
+lines at 204px and a long draft capped at 288px with internal scrolling. Deleting
+text shrank the field back to 50px. In a 780x650 viewport the wrapped template
+fully fit at 116px; opening the desktop preview preserved input bounds and the
+send button remained inside the viewport. Initial-mount, typing, deletion,
+wrapping, scrolling and preview-layout checks passed with no page errors.
+TypeScript, targeted hook ESLint and the conservative production build passed;
+only frontend assets were replaced. Screenshots were visually inspected.

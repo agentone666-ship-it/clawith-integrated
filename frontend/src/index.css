@@ -7346,7 +7346,7 @@ select:focus {
 }
 
 .chat-composer-input-block {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -7536,11 +7536,11 @@ select:focus {
 }
 
 .chat-composer .chat-input {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   width: 100%;
   min-width: 0;
-  min-height: 0;
-  max-height: min(320px, 40vh);
+  min-height: 50px;
+  max-height: min(320px, 32vh);
   background: transparent;
   border: none;
   border-radius: 0;
@@ -8306,3 +8306,19 @@ select:focus {
 }
 
 [data-theme="light"] .distill-spinner { color: #A98A5E; }
+
+/* Reserve the composer; running previews consume only the remaining space. */
+.chat-live-monitor {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: min(260px, 28vh);
+  overflow: auto;
+  margin: 0 var(--space-4) 4px;
+}
+.chat-live-monitor:empty {
+  display: none;
+}
+.chat-live-monitor .auto-agent-monitor {
+  margin: 0;
+  max-height: none;
+}
