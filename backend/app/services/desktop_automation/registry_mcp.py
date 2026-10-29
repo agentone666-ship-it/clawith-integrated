@@ -81,7 +81,7 @@ async def registry_mcp(req: Request):
                     row = await db.get(Playback, uuid.UUID(value["id"]))
                     value = s.run_view(row) if row else {"error": "Execution receipt unavailable"}
                 content = []
-                if args.operation == "observe":
+                if args.operation in {"observe", "launch"}:
                     content.append({"type": "image", "mimeType": value.pop("mime"), "data": value.pop("image")})
                 text = json.dumps(value, ensure_ascii=False)
                 if len(text.encode()) > 60000:

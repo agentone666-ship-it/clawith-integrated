@@ -196,3 +196,7 @@ The chat activity projection must scope the latest AgentRun by tenant, origin
 user, Agent and session before loading Tool receipts and that Run's Playback.
 Never substitute a previous Run's captures for a current Run with no trial.
 The projection observes Runtime facts without defining new execution states.
+
+Management launch is restricted to server-configured application IDs and genuine
+active Runtime identities; it reuses the serialized observer lease and release
+path. Return screenshots as MCP image blocks, outside the text budget.

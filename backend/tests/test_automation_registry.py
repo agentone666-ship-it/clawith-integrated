@@ -192,12 +192,13 @@ async def test_published_compiler_change_fails_before_desktop(fixture, monkeypat
         assert len(service.driver.inputs) == before and service.driver.owners == set()
 
 
-async def test_registry_missing_identity_and_member_registration_denied(fixture):
+@pytest.mark.parametrize("operation", ["create", "launch"])
+async def test_registry_missing_identity_and_member_registration_denied(fixture, operation):
     service, engine, sessions = fixture
     registry = AutomationRegistry(service, engine)
     async with sessions() as db:
         with pytest.raises(HTTPException) as exc:
-            await registry.invoke(db, {}, RegistryCall(operation="create", name="unauthorized", script=source()))
+            await registry.invoke(db, {}, RegistryCall(operation=operation, name="unauthorized", script=source()))
         assert exc.value.status_code == 403
         with pytest.raises(HTTPException) as exc:
             await registry.register(db, USER)
@@ -348,5 +349,104 @@ def test_recording_scaffold_preserves_modal_targets_literal_params_and_steps():
 
 
 def test_escape_recovery_without_target_is_supported():
-    result = worker(source("from automation import ui\nui.key('esc', target=None)\nw=ui.window('desk.exe','title')\nui.assert_text('结果',target=w)"), {})
+    result = worker(
+        source(
+            "from automation import ui\nui.key('esc', target=None)\nw=ui.window('desk.exe','title')\nui.assert_text('结果',target=w)"
+        ),
+        {},
+    )
     assert result["ok"] and result["plan"]["steps"][0]["key"] == "esc"
+
+
+async def test_launch_uses_configured_application_and_releases_observer(fixture, monkeypatch):
+    from types import SimpleNamespace
+
+    service, engine, sessions = fixture
+    registry = AutomationRegistry(service, engine)
+    actor = SimpleNamespace(id=uuid.uuid4(), agent_id=uuid.uuid4(), tenant_id=USER.tenant_id)
+
+    async def identity(db, meta):
+        return USER, actor
+
+    monkeypatch.setattr(registry, "actor", identity)
+    service.applications = {"business-desk": {"label": "工作台", "path": "configured.exe"}}
+    # Use a bounded empty Runtime registry for the active-observer identity query.
+    from sqlalchemy import text
+
+    async with sessions() as db:
+        await db.execute(text("CREATE TABLE agent_runs (id UUID, tenant_id UUID, lane_held BOOLEAN)"))
+        service.driver.runtime_contexts = {}
+
+        async def windows(session):
+            return []
+
+        service.driver.windows = windows
+        result = await registry.invoke(db, {}, RegistryCall(operation="launch", application_id="business-desk"))
+        assert result["window_count"] == 0
+        assert len(service.driver.inputs) == 1
+        assert not service.driver.owners
+        with pytest.raises(HTTPException) as error:
+            await registry.invoke(db, {}, RegistryCall(operation="launch", application_id="arbitrary.exe"))
+        assert error.value.status_code == 422
+        assert len(service.driver.inputs) == 1
+
+        async def busy(db, **kwargs):
+            raise HTTPException(409, "Desktop occupied")
+
+        monkeypatch.setattr(service, "assert_desktop_idle", busy)
+        with pytest.raises(HTTPException) as error:
+            await registry.invoke(db, {}, RegistryCall(operation="launch", application_id="business-desk"))
+        assert error.value.status_code == 409
+        assert len(service.driver.inputs) == 1
+
+        async def idle(db, **kwargs):
+            return None
+
+        monkeypatch.setattr(service, "assert_desktop_idle", idle)
+        service.driver.fail_input = True
+        from app.services.desktop_automation.driver import DriverFailure
+
+        with pytest.raises(DriverFailure):
+            await registry.invoke(db, {}, RegistryCall(operation="launch", application_id="business-desk"))
+        assert not service.driver.owners
+
+
+@pytest.mark.parametrize("operation", ["observe", "launch"])
+async def test_desktop_observation_mcp_separates_image_from_text_budget(fixture, monkeypatch, operation):
+    from types import SimpleNamespace
+
+    import httpx
+    from fastapi import FastAPI
+
+    from app.services.desktop_automation.registry_mcp import router
+
+    service, engine, sessions = fixture
+    registry = AutomationRegistry(service, engine)
+    admin = SimpleNamespace(**{**vars(USER), "role": "org_admin"})
+    async with sessions() as db:
+        await registry.register(db, admin)
+        await db.commit()
+
+    async def invoke(db, meta, args):
+        return {"image": "aW1h" * 20000, "mime": "image/png", "window_count": 1}
+
+    monkeypatch.setattr(registry, "invoke", invoke)
+    monkeypatch.setattr("app.services.desktop_automation.registry_mcp.async_session", sessions)
+    app = FastAPI()
+    app.state.automation_registry = registry
+    app.include_router(router)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/automation-mcp/registry",
+            headers={"Authorization": "Bearer " + service.tool_token(USER.tenant_id, registry.tool_id)},
+            json={
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "automation_registry", "arguments": {"operation": operation}},
+            },
+        )
+    result = response.json()["result"]
+    assert result["isError"] is False
+    assert result["content"][1]["type"] == "image"
+    assert len(result["content"][1]["data"]) > 60000
+    assert json.loads(result["content"][0]["text"]) == {"window_count": 1}

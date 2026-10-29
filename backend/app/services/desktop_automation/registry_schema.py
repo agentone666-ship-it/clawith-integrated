@@ -34,6 +34,7 @@ def registry_schema() -> dict:
                 "get",
                 "version",
                 "observe",
+                "launch",
                 "create",
                 "update",
                 "test",
@@ -46,6 +47,11 @@ def registry_schema() -> dict:
         **{
             k: {"type": "string", "description": "Required only for operations referencing this identifier"}
             for k in ("workflow_id", "version_id", "run_id", "agent_id")
+        },
+        "application_id": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "For launch only: exact server application ID returned by sdk; never a path",
         },
         "name": {"type": "string", "maxLength": 120},
         "description": {"type": "string", "maxLength": 1000},

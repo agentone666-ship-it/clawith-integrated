@@ -16,7 +16,7 @@ from app.models.user import User
 from app.services.tool_config import encrypt_sensitive_fields
 
 from .code_contracts import ManagedScript
-from .contracts import Script, Target
+from .contracts import Script, Step, Target
 from .driver import DriverFailure, result_text
 from .executor import PlaybackEngine
 from .registry_schema import registry_schema
@@ -34,6 +34,7 @@ class RegistryCall(BaseModel):
         "get",
         "version",
         "observe",
+        "launch",
         "create",
         "update",
         "test",
@@ -56,6 +57,7 @@ class RegistryCall(BaseModel):
     offset: int = Field(default=0, ge=0, le=10000)
     source_offset: int = Field(default=0, ge=0, le=131072)
     target: Target | None = None
+    application_id: str = Field(default="", max_length=80)
 
 
 class AutomationRegistry:
@@ -173,8 +175,10 @@ class AutomationRegistry:
                 "offset": args.offset,
                 "next_offset": args.offset + 10 if len(rows) > 10 else None,
             }
-        if op == "observe":
-            return await self.observe(db, actor, args.target)
+        if op in {"observe", "launch"}:
+            if op == "launch" and args.application_id not in s.applications:
+                fail(422, "Choose an application_id returned by sdk; arbitrary executables are not allowed")
+            return await self.observe(db, actor, args.target, args.application_id if op == "launch" else None)
         if op == "run_status":
             if not args.run_id:
                 fail(422, "run_id is required")
@@ -247,7 +251,9 @@ class AutomationRegistry:
             )
         fail(422, "Unknown operation")
 
-    async def observe(self, db: AsyncSession, actor: AgentRun, target: Target | None) -> dict:
+    async def observe(
+        self, db: AsyncSession, actor: AgentRun, target: Target | None, application_id: str | None = None
+    ) -> dict:
         s = self.service
         async with s.lock:
             await s.assert_desktop_idle(db, ignore_agent_run=actor.id)
@@ -272,6 +278,14 @@ class AutomationRegistry:
                 "active_run_ids": [str(i) for i in held],
             }
             try:
+                if application_id:
+                    await s.driver.execute(
+                        session,
+                        Step(id="prepare_app", action="launch_app", app=application_id),
+                        {},
+                        "launch_" + uuid.uuid4().hex,
+                        s.applications,
+                    )
                 frame = await s.driver.frame(session)
                 windows = await s.driver.windows(session)
                 text = ""

@@ -451,3 +451,50 @@ session and confirmed zero Tools/no trial/no stale frame. A separately marked
 observer-response fixture using the real previous compile failure confirmed
 terminal errors display without infinite waiting. No chat message, trial or
 computer input was dispatched; the business workflow remains unverified.
+
+
+### Repair execution and application preparation (2026-10-29)
+
+The management Tool now exposes launch(application_id) for applications listed
+by sdk. It validates real active Runtime identity and assignment before the
+operation, rejects arbitrary paths, and reuses observe's desktop-idle check,
+lock, provider identity and finally-release lifecycle. This prepares an
+application without constructing a business trial just to launch it. Launch
+and observe screenshots are MCP image blocks, not base64 in the bounded JSON
+text. The additive operation changes neither published workflow versions nor
+the main Runtime or compiler.
+
+The authoring specification requires current-run sdk/observe/get receipts for
+repair requests; historical failures cannot substantiate current checks. Reuse
+verified action paths, focus each field, keep modal confirmation and final
+saved-state assertions, calculate with Decimal, and report exclusion reasons.
+ui.window describes a target; ui.launch returns no window object; ui.sleep is
+not in the SDK. This guidance improves authoring but does not enforce a model
+completion guarantee.
+
+Live checkpoint inspection confirmed the full Markdown reached the model. The
+user's latest zero-Tool answer repeated history; revision 8 contained guessed
+coordinates, unfocused inputs, no confirmation save and a not-saved assertion.
+The existing Qwen3.5-Flash repaired that same user-owned workflow through the
+existing Runtime with a supplied read-only verified RPA reference. Run
+c5a404a9-18b8-4071-90e4-02590c9fafb6 used 14 Tool calls in 107.835s. Its
+20-step trial saved exactly one PR-0088-027 purchase; independent persisted
+record checks verified supplier, quantity960, amount110769.60, reference and
+date. Revision9/v1 succeeded, but its reason omitted exclusions. The same Qwen model
+then updated revision10 and published v2 after a separate PR-0089-027 fixture
+test: 970 units, amount113018.30, exactly one saved record and both explicit
+exclusion reasons verified independently. Run
+e43406bf-4878-4a7b-902e-ff0d498438bc used 8 Tool calls in 72.22s; trial
+1664e9fd-ebb8-49c6-aad4-5d49fced925a completed20 steps/20 frames. The original
+PR-0088-027 dataset was restored and its record retained; no duplicate save of
+that request was performed. Published v2 Tool is
+ed321e51-f19d-43fd-906d-1792c5cd25be, with assignment left to the existing guide.
+This is assisted repair of a synthetic case, not an unguided success rate.
+
+Ruff, targeted Pyright and 25 focused registry/trace tests passed; five focused
+authorization/launch/transport tests passed after adding failure-release
+coverage. A headless browser using the affected caller's identity read the
+actual workflow and successful v2 trial, displayed its 20 stored frames, opened
+the large viewer, switched to step1 and verified the 1017x390 viewport with no
+page errors. The capability was replaced while idle; main Runtime and model
+were unchanged. No Mac screen control was used.
