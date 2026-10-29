@@ -10,6 +10,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 export interface ComposerHandoff {
   agentId: string;
   text: string;
+  document?: { name: string; text: string };
   createdAt: number;
 }
 export function validComposerHandoff(
@@ -20,7 +21,12 @@ export function validComposerHandoff(
   if (!agentId || !value || typeof value !== "object") return false;
   const v = value as Partial<ComposerHandoff>;
   return (
+    new TextEncoder().encode(JSON.stringify(v)).length <= 24576 &&
     v.agentId === agentId &&
+    (!v.document ||
+      (v.document.name === "AUTOMATION_AGENT.md" &&
+        typeof v.document.text === "string" &&
+        new TextEncoder().encode(v.document.text).length <= 16384)) &&
     typeof v.text === "string" &&
     v.text.trim().length > 0 &&
     new TextEncoder().encode(v.text).length <= 24576 &&
@@ -35,6 +41,7 @@ export function useComposerHandoff(
   agentId: string | undefined,
   setInput: Dispatch<SetStateAction<string>>,
   inputRef: RefObject<HTMLTextAreaElement | null>,
+  setDocuments: Dispatch<SetStateAction<{ name: string; text: string }[]>>,
 ) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -45,6 +52,12 @@ export function useComposerHandoff(
     consumed.current = location.key;
     if (validComposerHandoff(state.composerHandoff, agentId, Date.now())) {
       const text = state.composerHandoff.text;
+      const document = state.composerHandoff.document;
+      if (document)
+        setDocuments((previous) => [
+          ...previous.filter((d) => d.name !== document.name),
+          document,
+        ]);
       setInput((previous) =>
         previous.trim() ? `${previous}\n\n${text}` : text,
       );
@@ -62,5 +75,5 @@ export function useComposerHandoff(
       replace: true,
       state: remaining,
     });
-  }, [agentId, location, navigate, setInput, inputRef]);
+  }, [agentId, location, navigate, setInput, inputRef, setDocuments]);
 }

@@ -307,3 +307,49 @@ consumption, no automatic network/WebSocket submission, short labels, Escape
 close, removal of the duplicate CTA, and light/dark/narrow rendering. Screenshots
 were inspected. Only the frontend was updated; no Runtime or desktop execution
 was started for this UI task.
+
+
+### Markdown card, adaptive composer and playback review (2026-10-28)
+
+The composer handoff now carries a read-only `AUTOMATION_AGENT.md` document using
+the existing attachment card and send packaging. Editable text is only a short
+business template with explicit unfilled fields. Placeholder text is not valid
+business data. Remove the superseded combined prompt helper; the server Markdown
+remains authoritative. The complete encoded handoff is limited to 24 KiB, its
+document to 16 KiB. Programmatic changes resize the textarea like typed input,
+up to min(320px, 40vh), after which content scrolls.
+
+Playback, shared by Python and RPA, now captures completed-step desktop frames
+using its existing provider session and lock. At most 32 screenshots/32 MiB and
+120 metadata entries per run are retained, in addition to the existing final
+evidence. No typed text is copied into trace metadata. Capture failures do not
+retry actions or claim business success. Permission-checked frame reads and an
+owner/tenant-scoped latest-Agent-run projection feed the shared viewer; observers
+never invoke the provider or steal its lease. The studio shows active frames and
+step replay, while chat polls the same receipts every two seconds. Frames are
+step samples, not continuous video.
+
+Real specification evaluation used the existing configured Qwen coding employee
+in isolated Windows, without authored business source from Codex. Initial run
+c0bc8501-ff9c-4827-a6e0-53cf69e60205 failed with no business record: the Windows
+Start menu blocked foreground activation. The provider explicitly reported no
+mouse input; classify that evidence as a known rejected dispatch rather than an
+unknown write. The spec now limits repeated foreground failures and describes
+observed Start-menu Escape recovery, while retaining the unknown-write ban.
+
+Second run 9817f603-c5c9-415d-8c13-be6192efb912 completed after autonomous repair.
+Workflow b80fbc93-a008-4200-9c23-bc3585c12c7a revision 4 published v1 Tool
+c1f44354-4e92-477d-bdd3-474c2f32476a. Successful trial
+83dc1c3f-a68d-478f-960e-26983242f68b executed 19 steps in 18.978s with 19 frames.
+Independent stored-record grading verified exactly one purchase, supplier,
+quantity 940, amount 109526.60, reference, date and reason. A separate real UI
+RPA run ec0f0afd-9885-4f3d-b363-193405d5a548 passed all business checks using new
+data, 18 steps/18 frames in 19.366s; the UI displayed live frames and navigated
+back to step 1. This is one synthetic business family with a failed first
+evaluation and a successful iteration, not a general benchmark success rate.
+
+59 focused backend cases, two composer contract tests, Ruff, targeted Pyright,
+frontend TypeScript/ESLint and the conservative production build passed. Real
+headless UI verified the MD card, short template, textarea height growing from
+28px to 204px, live Agent frames, RPA live/replay frames, and no page errors.
+Windows and the main Runtime were not replaced; no Mac foreground was used.

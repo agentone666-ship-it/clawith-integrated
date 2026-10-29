@@ -1,3 +1,4 @@
+import { RunPlayback } from "./RunPlayback";
 import { useEffect, useState } from "react";
 import type { Run, Script } from "./contracts";
 import { automationApi } from "./api";
@@ -120,6 +121,9 @@ export function RunPanel({
               {run.result.seconds !== undefined &&
                 `· ${run.result.seconds.toFixed(2)} 秒`}
             </p>
+            {(run.status === "running" || !!run.result.trace?.length) && (
+              <RunPlayback run={run} />
+            )}
             {run.agent_run_id && (
               <p className="auto-hint">Agent Run：{run.agent_run_id}</p>
             )}

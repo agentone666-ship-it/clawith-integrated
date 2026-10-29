@@ -80,6 +80,15 @@ export interface Run {
     error?: string;
     diagnostic?: { code: string; message: string; line?: number };
     failed_source_line?: number;
+    trace?: {
+      step: number;
+      action: string;
+      app: string;
+      x?: number;
+      y?: number;
+      frame?: boolean;
+      frame_error?: string;
+    }[];
     compiler_stdout?: string;
     total_steps?: number;
     failed_step?: number | null;

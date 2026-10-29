@@ -345,3 +345,8 @@ def test_recording_scaffold_preserves_modal_targets_literal_params_and_steps():
     secret = script.model_copy(update={"secret_parameters": ["order"]})
     with pytest.raises(ValueError, match="Mixed secret"):
         python_template(secret)
+
+
+def test_escape_recovery_without_target_is_supported():
+    result = worker(source("from automation import ui\nui.key('esc', target=None)\nw=ui.window('desk.exe','title')\nui.assert_text('结果',target=w)"), {})
+    assert result["ok"] and result["plan"]["steps"][0]["key"] == "esc"

@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { copyToClipboard } from "../../utils/clipboard";
 import { automationApi } from "./api";
 import type { AuthoringReadiness, Workflow } from "./contracts";
-import { buildAuthoringPrompt } from "./authoringPrompt";
 import "./authoring.css";
 
 interface Props {
@@ -71,17 +70,21 @@ export function AgentAuthoringGuide({ workflow, onClose }: Props) {
   const agent = ready.find((a) => a.name.includes("脚本工程师")) || ready[0];
   const handleStart = () => {
     if (!page || !agent) return;
-    const text = buildAuthoringPrompt(
-      "",
-      page.spec_markdown,
-      window.location.origin,
-      workflow ? { id: workflow.id, name: workflow.name } : null,
-    );
+    const text =
+      "请按附件规范交付固定脚本。\n业务目标：【请填写】\n测试数据或测试环境：【请填写；没有可先提交草稿】\n交付要求：验证通过后发布 Tool。";
     navigate(`/agents/${agent.id}/chat`, {
       state: {
         composerHandoff: {
           agentId: agent.id,
-          text: text + "\n\n我的业务需求：",
+          text,
+          document: {
+            name: "AUTOMATION_AGENT.md",
+            text:
+              page.spec_markdown +
+              (workflow
+                ? `\n\n## 可只读参考的流程\n${workflow.id}（${workflow.name}）。新建流程，不得覆盖参考流程。`
+                : ""),
+          },
           createdAt: Date.now(),
         },
       },

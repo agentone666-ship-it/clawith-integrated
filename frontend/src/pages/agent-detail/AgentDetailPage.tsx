@@ -61,6 +61,7 @@ import SettingsTab from './tabs/SettingsTab';
 import SkillsTab from './tabs/SkillsTab';
 import ToolsTab from './tabs/ToolsTab';
 import AgentDirectory from './AgentDirectory';
+import { AgentRunMonitor } from '../automations/AgentRunMonitor';
 import { useComposerHandoff } from './hooks/useComposerHandoff';
 import { useAgentDetailRoute } from './hooks/useAgentDetailRoute';
 import {
@@ -3021,7 +3022,11 @@ export default function AgentDetailPage() {
     const chatContainerRef = useRef<HTMLDivElement>(null);
     const chatHistorySentinelRef = useRef<HTMLDivElement>(null);
     const chatInputRef = useRef<HTMLTextAreaElement>(null);
-    useComposerHandoff(id, setChatInput, chatInputRef);
+    useComposerHandoff(id, setChatInput, chatInputRef, setAttachedFiles);
+    useEffect(() => {
+        const el = chatInputRef.current;
+        if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, Math.min(320, window.innerHeight * 0.4)) + 'px'; }
+    }, [chatInput]);
     const chatInputAreaRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -7296,6 +7301,7 @@ export default function AgentDetailPage() {
                                                                 </div>
                                                             </div>
                                                         ))}
+                                                    {id && <AgentRunMonitor agentId={id} />}
                                                     {(chatUploadDrafts.length > 0 || attachedFiles.length > 0) && (
                                                         <div className="chat-composer-attachments">
                                                             {chatUploadDrafts.map((draft) => (

@@ -186,3 +186,8 @@ capabilities must not use visibility/use permission as configuration authority.
 The authoring handoff readiness endpoint is a read-only projection of the same
 management scope plus global and per-employee Tool enablement. It must never
 install, grant, create workflows, reserve desktops or dispatch messages.
+
+Playback owns step traces and screenshots. Observers must read stored captures
+under existing workflow authorization, never call the live provider or reserve
+a desktop. Capture at most 32 step frames / 32 MiB per run plus the existing final
+screenshot; trace metadata excludes typed text and secret values.

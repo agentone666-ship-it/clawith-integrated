@@ -230,3 +230,17 @@ async def batch_assign(
     from app.services.desktop_automation.assignments import VersionAssignments
 
     return await VersionAssignments(capability(req)).assign(db, user, ident, version_id, body.agent_ids)
+
+
+@router.get("/runs/{ident}/frames/{step}")
+async def playback_frame(req: Request, ident: uuid.UUID, step: int, user: CurrentUser, db: DBSession):
+    from app.services.desktop_automation.trace import frame
+
+    return await frame(req.app.state.desktop_playback, db, user, ident, step)
+
+
+@router.get("/agent-runs/{agent_id}")
+async def latest_agent_playback(req: Request, agent_id: uuid.UUID, user: CurrentUser, db: DBSession):
+    from app.services.desktop_automation.trace import latest
+
+    return await latest(req.app.state.desktop_playback, db, user, agent_id)

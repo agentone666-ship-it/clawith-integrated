@@ -69,6 +69,7 @@ class CuaDriver:
                 x in detail.lower()
                 for x in [
                     "no action was dispatched",
+                    "no mouse input was sent",
                     "no screenshot of window",
                     "invalid arguments",
                     "in use by another",

@@ -256,6 +256,10 @@ class PlaybackEngine:
                         r = await db.get(Playback, ident)
                         if r is None:
                             raise RuntimeError("Playback reservation disappeared")
+                        from .trace import capture
+
+                        async with s.lock:
+                            r.result = await capture(s, ident, session, index, len(steps), step, r.result or {})
                         r.progress, r.updated_at = index + 1, now()
                         await db.commit()
         except DriverFailure as exc:

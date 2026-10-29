@@ -24,6 +24,12 @@ export const automationApi = {
         "/authoring?" +
         new URLSearchParams({ search, offset: String(offset) }),
     ),
+  latestAgentRun: (agentId: string) =>
+    request<Run | null>(base + "/agent-runs/" + agentId),
+  runFrame: (id: string, step: number) =>
+    request<{ image: string; mime: string }>(
+      base + "/runs/" + id + "/frames/" + step,
+    ),
   list: () => request<WorkflowSummary[]>(base),
   create: (name: string, description: string, script?: Script) =>
     post<Workflow>("", { name, description, script }),
