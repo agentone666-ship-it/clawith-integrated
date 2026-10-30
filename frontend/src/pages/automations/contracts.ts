@@ -231,4 +231,5 @@ export interface AgentDesktopActivity {
   tool_calls: number;
   created_at: string;
   playback: Run | null;
+  computer: boolean;
 }

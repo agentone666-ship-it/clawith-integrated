@@ -80,3 +80,8 @@ A running desktop trial defaults to the live latest-frame endpoint, with capture
 time and continued updates in the large viewer. Do not wait for Tool completion
 or substitute final evidence while running. Historical step selection can pause
 live following; the explicit return-to-live control restores it.
+
+Direct Computer Use uses the current session/Run's private cached frame and
+capture time in AgentRunMonitor, with the same viewport DesktopViewer as fixed
+scripts. Polling observers never call a desktop Tool or acquire a session. Keep
+terminal last-frame state distinct from ongoing execution and business success.

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AgentDesktopActivity } from "./contracts";
 import { automationApi } from "./api";
+import { ComputerPreview } from "./ComputerPreview";
 import { RunPlayback } from "./RunPlayback";
 export function AgentRunMonitor({
   agentId,
@@ -44,7 +45,13 @@ export function AgentRunMonitor({
       <div>
         <strong>本次桌面任务</strong> · 已调用 {activity.tool_calls} 个工具
       </div>
-      {!run ? (
+      {!run && activity.computer ? (
+        <ComputerPreview
+          key={activity.agent_run_id}
+          runId={activity.agent_run_id}
+          active={activity.lane_held}
+        />
+      ) : !run ? (
         <p role="status">
           {activity.lane_held
             ? "任务处理中，尚未进入桌面试运行。"

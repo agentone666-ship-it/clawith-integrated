@@ -258,3 +258,10 @@ async def live_frame(req: Request, ident: uuid.UUID, user: CurrentUser, db: DBSe
     from app.services.desktop_automation.live import latest_frame
 
     return await latest_frame(req.app.state.desktop_playback, db, user, ident)
+
+
+@router.get("/computer-runs/{ident}/live")
+async def computer_frame(req: Request, ident: uuid.UUID, user: CurrentUser, db: DBSession):
+    from app.services.desktop_automation.computer import latest
+
+    return await latest(req.app.state.desktop_automation, db, user, ident)

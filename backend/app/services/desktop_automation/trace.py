@@ -118,4 +118,5 @@ async def activity(engine, db, user, agent_id, session_id):
         "tool_calls": count,
         "created_at": actor.created_at.isoformat(),
         "playback": engine.service.run_view(run) if run else None,
+        "computer": (engine.service.config.evidence_dir / "computer" / str(actor.id) / "live.png").is_file(),
     }

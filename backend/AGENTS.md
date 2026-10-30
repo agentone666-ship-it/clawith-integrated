@@ -210,3 +210,9 @@ intermediate state check. Reconcile unknown input only against a postcondition
 proven absent before dispatch; otherwise stop without replay. Do not represent
 diagnostic sentinel failures as a business delivery or rewrite historical
 failed trial receipts. See the desktop automation note for the precise scope.
+
+The Windows atomic Computer Tool proxy and its Run-owned screenshot sampler
+belong to `desktop_automation/computer.py`. Validate genuine active Runtime
+identity, Tool assignment and origin user before forwarding; keep private
+read-only observers outside desktop leases. Register the literal computer MCP
+route before the published-version UUID route. See the owning automation note.

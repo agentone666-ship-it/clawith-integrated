@@ -33,6 +33,13 @@ export const automationApi = {
         "?" +
         new URLSearchParams({ session_id: sessionId }),
     ),
+  computerFrame: (id: string) =>
+    request<{
+      image: string;
+      mime: string;
+      sequence: string;
+      captured_at: string;
+    }>(base + "/computer-runs/" + id + "/live"),
   liveFrame: (id: string) =>
     request<{
       image: string;

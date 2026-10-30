@@ -680,3 +680,61 @@ Original fixture bytes were restored, saved test evidence retained. Only the
 capability container was replaced; main Runtime was unchanged. This proves
 this controlled task, not autonomous model repair reliability or recovery from
 arbitrary leftover modals. Historical failures remain unchanged.
+
+### Direct Computer Use live preview (2026-10-29)
+
+The selected desktop execution provider remains pinned MIT-licensed Cua Driver
+0.37.0. UI-TARS SDK/Qwen Windows research in the separate thread completed168
+real GUI trials; the primary confirmation SDK score was15/36, precise feedback
+12/36, JSON+feedback13/36. These are task-success scores and cannot be compared
+with the earlier Cua28/28 and UI-TARS21/28 input-primitive checks. No evidence
+establishes a universal autonomous winner. Cua fits the current product contract:
+atomic Tools, existing Clawith model/Runtime, one shared isolated Windows desktop.
+
+`computer.py` owns the authenticated proxy for the existing Windows Computer
+Tool and its Run-bound screenshot sampler. Validate a live genuine Run, tenant,
+Agent, enabled Tool assignment and active origin user before provider access.
+Runtime supplies identity; arguments cannot supply sessions. Preserve native
+request-ID write receipts and never replay uncertain writes. The native bridge
+remains the physical lease owner. The sampler shares its Runtime/provider
+identity, serializes captures with existing capability work, and stops/joins
+before release on explicit release, lane termination or capability shutdown.
+Capture errors are logged without changing action receipts. Latest captures
+are private bounded8MiB atomic PNG replacements under computer/<Run>/live.png.
+
+The chat monitor selects only the current session's latest authorized Run.
+Direct Computer Use reads a private HTTP frame endpoint checked against the
+Run tenant and origin user. The observer never acquires a desktop session.
+Refresh approximately every1s, show capture time, retain last frame after
+completion, and reuse the fit/1:1 viewport viewer. This is sampled live preview,
+not a video stream or a task-success assertion. Place the literal computer MCP
+route before the published-version UUID wildcard; assembled-app regression
+must exercise that order.
+
+Current UI demonstration recorded genuine Code22-step and RPA18-step purchase
+runs, independently verified exactly one correct persisted record each (separate
+synthetic datasets191/192). The narrated72.56s video shows editing/parameters,
+actual running desktop updates and completion; it is not an autonomous coding
+or fresh RPA recording success claim. Prior recorded-source history is reused.
+The natural preset voice is Qwen3-TTS Serena, disclosed as synthetic.
+
+Direct-tool live acceptance used the existing MiniMax-M3 model through the real
+Native Runtime: Run61dc8dd0-b8e5-45d5-8133-45cbee64f9bc completed15 Tool calls
+in83.804s, with14 succeeded and1 rejected help(release) schema lookup corrected
+by the model. The headless actual chat observed64 fresh frame sequences while
+the Run still held its lane, including the expanded viewer;1017x390 fit and
+Escape checks passed without page errors. The model navigated purchase/history
+pages, queried records and read the same PR-0192-027 fields as the independently
+verified RPA result, without saving another record. Explicit release succeeded;
+lane_held=false, no unknown/started receipts, and file mtime remained unchanged
+after sampler termination. Do not equate64 refreshed captures with64 distinct
+visual states or a full-motion video. The dedicated demo Agent uses the shared
+Tool; it is not a required or exclusive binding. Existing business Agent's
+newly added raw Tool binding was withdrawn because it also reserved the desktop
+for a pre-existing user task; that task was preserved. Failed transport and
+onboarding acceptance attempts remain excluded from the successful proof.
+
+Verification:60 focused automation tests passed, then8 direct-tool tests passed
+after origin-user validation was added. Ruff, targeted Pyright, ESLint and both
+source/conservative deployment frontend production builds passed. The main
+Runtime container was unchanged; only the capability and frontend assets changed.

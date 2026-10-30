@@ -40,7 +40,10 @@ async def pump(service, ident, session):
 
 async def latest_frame(engine, db, user, ident):
     await engine.get(db, user, ident)
-    path: Path = engine.service.config.evidence_dir / str(ident) / "live.png"
+    return read_frame(engine.service.config.evidence_dir / str(ident) / "live.png")
+
+
+def read_frame(path: Path):
     try:
         with path.open("rb") as handle:
             stat = os.fstat(handle.fileno())
