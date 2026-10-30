@@ -189,7 +189,14 @@ class AutomationRegistry:
         if op == "create":
             if not args.name.strip() or args.script is None:
                 fail(422, "create requires name and script")
-            value = await s.create(db, user, args.name, args.description, args.script)
+            value = await s.create(
+                db,
+                user,
+                args.name,
+                args.description,
+                args.script,
+                desktop_agent_id=actor.agent_id if s.config.sandbox_url else None,
+            )
             return {
                 "workflow_id": value["id"],
                 "revision": value["revision"],
@@ -260,19 +267,7 @@ class AutomationRegistry:
         s = self.service
         async with s.lock:
             await s.assert_desktop_idle(db, ignore_agent_run=actor.id)
-            held = (
-                (
-                    await db.execute(
-                        select(AgentRun.id)
-                        .where(AgentRun.tenant_id == actor.tenant_id, AgentRun.lane_held.is_(True))
-                        .limit(257)
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            if len(held) > 256:
-                fail(409, "Too many active desktop task identities")
+            held = await s.desktop_active_runs(db, actor)
             session = "observe_" + actor.id.hex
             s.driver.runtime_contexts[session] = {
                 "tenant_id": str(actor.tenant_id),
@@ -280,6 +275,11 @@ class AutomationRegistry:
                 "agent_id": str(actor.agent_id),
                 "active_run_ids": [str(i) for i in held],
             }
+            if s.config.sandbox_url:
+                origin = await db.get(User, actor.origin_user_id)
+                if origin is None:
+                    fail(403, "Desktop origin account is unavailable")
+                s.bind_desktop(session, origin, actor=actor)
             try:
                 if application_id:
                     await s.driver.execute(
@@ -287,7 +287,7 @@ class AutomationRegistry:
                         Step(id="prepare_app", action="launch_app", app=application_id),
                         {},
                         "launch_" + uuid.uuid4().hex,
-                        s.applications,
+                        s.applications_for(session),
                     )
                 frame = await s.driver.frame(session)
                 windows = await s.driver.windows(session)

@@ -20,6 +20,10 @@ class DriverFailure(RuntimeError):
         self.condition_absent = condition_absent
 
 
+class DesktopPreparing(DriverFailure):
+    """No input dispatched; the host-owned startup continues."""
+
+
 def result_text(result: dict) -> str:
     return "\n".join(c.get("text", "") for c in result.get("content", []) if c.get("type") == "text")[:60000]
 
@@ -28,6 +32,10 @@ class CuaDriver:
     def __init__(self, config: Settings):
         self.config = config
         self.runtime_contexts: dict[str, dict] = {}
+        self.legacy_sessions: set[str] = set()
+        from .sandbox import SandboxGateway
+
+        self.sandbox = SandboxGateway(config) if config.sandbox_url else None
 
     async def call(self, session: str, action: str, params: dict, request_id: str | None = None) -> dict:
         args = {"action": action, "params": params, "session_id": session}
@@ -42,6 +50,9 @@ class CuaDriver:
         if session in self.runtime_contexts:
             body["params"]["_meta"] = {"io.clawith/runtime": self.runtime_contexts[session]}
         try:
+            if self.sandbox and session not in self.legacy_sessions:
+                routed = await self.sandbox.call(session, body)
+                return self.validate_result(routed.get("result", {}), request_id)
             async with (
                 httpx.AsyncClient(timeout=httpx.Timeout(45, connect=5), trust_env=False) as client,
                 client.stream(
@@ -63,6 +74,10 @@ class CuaDriver:
                 "Desktop connection interrupted. Inspect state before repeating input.",
                 uncertain=request_id is not None,
             ) from exc
+        return self.validate_result(result, request_id)
+
+    @staticmethod
+    def validate_result(result: dict, request_id: str | None = None) -> dict:
         if not isinstance(result, dict) or result.get("isError") or not isinstance(result.get("content"), list):
             detail = result_text(result) if isinstance(result, dict) else "Invalid desktop result"
             known_rejected = any(
@@ -85,7 +100,27 @@ class CuaDriver:
     async def release(self, session: str) -> None:
         context = self.runtime_contexts.pop(session, None)
         native_session = "run_" + context["run_id"].replace("-", "") if context else session
-        await self.call(native_session, "release", {})
+        if self.sandbox and session not in self.legacy_sessions:
+            await self.sandbox.release(
+                session,
+                {
+                    "jsonrpc": "2.0",
+                    "id": uuid.uuid4().hex,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "computer",
+                        "arguments": {"action": "release", "params": {}, "session_id": native_session},
+                    },
+                },
+            )
+        else:
+            if session in self.legacy_sessions:
+                self.legacy_sessions.add(native_session)
+            try:
+                await self.call(native_session, "release", {})
+            finally:
+                self.legacy_sessions.discard(session)
+                self.legacy_sessions.discard(native_session)
 
     async def windows(self, session: str) -> list[dict]:
         result = await self.call(session, "list_windows", {})

@@ -115,6 +115,29 @@ async def authoring_guide(req: Request, user: CurrentUser, db: DBSession, search
     return await AuthoringGuide(req.app.state.automation_registry).readiness(db, user, search, offset)
 
 
+@router.get("/desktops")
+async def desktops(req: Request, user: CurrentUser, db: DBSession):
+    from app.services.desktop_automation.sandbox import DesktopInventory
+
+    return await DesktopInventory(capability(req)).listing(db, user)
+
+
+@router.post("/desktops/{ident}/recording-workflow")
+async def desktop_recording(req: Request, ident: uuid.UUID, user: CurrentUser, db: DBSession):
+    from app.services.desktop_automation.sandbox import DesktopInventory
+
+    return await DesktopInventory(capability(req)).recording_workflow(db, user, ident)
+
+
+@router.post("/desktops/{ident}/{action}")
+async def desktop_action(req: Request, ident: uuid.UUID, action: str, user: CurrentUser):
+    from app.services.desktop_automation.sandbox import DesktopInventory
+
+    if action not in {"start", "save"}:
+        fail(404, "Unknown desktop operation")
+    return await DesktopInventory(capability(req)).action(user, ident, action)
+
+
 @router.get("/{ident}")
 async def detail(req: Request, ident: uuid.UUID, user: CurrentUser, db: DBSession):
     return await capability(req).detail(db, user, ident)

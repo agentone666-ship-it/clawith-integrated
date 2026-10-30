@@ -19,7 +19,7 @@ from app.models.user import User
 
 from .code_contracts import CodePlan, PythonScript, load_script
 from .contracts import Script
-from .driver import DriverFailure
+from .driver import DesktopPreparing, DriverFailure
 from .models import Playback, Recording, Workflow, now
 from .python_compiler import CompilationError, PythonCompiler
 from .service import AutomationService, fail
@@ -74,6 +74,10 @@ class PlaybackEngine:
                 ).scalar_one_or_none()
                 if not assigned:
                     fail(403, "This Agent Run has no assigned automation Tool")
+                if self.service.config.sandbox_url:
+                    origin = await db.get(User, actor.origin_user_id) if actor.origin_user_id else None
+                    if origin is None or not origin.is_active or origin.tenant_id != actor.tenant_id:
+                        fail(403, "Desktop invocation requires an active origin account")
                 if not version_id and actor.origin_user_id != user.id:
                     fail(403, "Draft tests require the Runtime origin user")
             fingerprint = hashlib.sha256(
@@ -87,14 +91,15 @@ class PlaybackEngine:
                 )
             ).scalar_one_or_none()
             if old:
-                if old.owner_id != user.id or old.fingerprint != fingerprint:
+                expected_owner = actor.origin_user_id if actor is not None else user.id
+                if old.owner_id != expected_owner or old.fingerprint != fingerprint:
                     fail(409, "Request ID was already used for another operation")
                 return self.service.run_view(old)
             await self.service.assert_desktop_idle(db, ignore_agent_run=agent_run_id)
             r = Playback(
                 id=uuid.uuid4(),
                 tenant_id=w.tenant_id,
-                owner_id=user.id,
+                owner_id=actor.origin_user_id if actor is not None else user.id,
                 workflow_id=w.id,
                 version_id=version_id,
                 agent_run_id=agent_run_id,
@@ -147,25 +152,14 @@ class PlaybackEngine:
                 await db.refresh(actor)
                 if not actor.lane_held:
                     fail(403, "Agent Run ended before desktop execution")
-                held = (
-                    (
-                        await db.execute(
-                            select(AgentRun.id)
-                            .where(AgentRun.tenant_id == w.tenant_id, AgentRun.lane_held.is_(True))
-                            .limit(257)
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                if len(held) > 256:
-                    fail(409, "Too many active desktop task identities")
+                held = await self.service.desktop_active_runs(db, actor)
                 self.service.driver.runtime_contexts["play_" + r.id.hex] = {
                     "tenant_id": str(actor.tenant_id),
                     "run_id": str(actor.id),
                     "agent_id": str(actor.agent_id),
                     "active_run_ids": [str(i) for i in held],
                 }
+            self.service.bind_desktop("play_" + r.id.hex, user, w.desktop_agent_id, actor)
             # Provider claim is the physical desktop authority. A DB reservation
             # alone must not publish a running operation on an occupied desktop.
             try:
@@ -173,6 +167,9 @@ class PlaybackEngine:
                 from .live import store
 
                 store(self.service, r.id, initial_frame)
+            except DesktopPreparing as exc:
+                await self.service.driver.release("play_" + r.id.hex)
+                fail(425, str(exc))
             except DriverFailure as exc:
                 fail(409, str(exc))
             db.add(r)
@@ -236,7 +233,7 @@ class PlaybackEngine:
                                     next_check,
                                     inputs,
                                     f"{ident.hex}_{index}_precheck",
-                                    s.applications,
+                                    s.applications_for(session),
                                     literal=literal,
                                 )
                         except DriverFailure as exc:
@@ -251,7 +248,12 @@ class PlaybackEngine:
                         try:
                             async with s.lock:
                                 await s.driver.execute(
-                                    session, step, inputs, f"{ident.hex}_{index}", s.applications, literal=literal
+                                    session,
+                                    step,
+                                    inputs,
+                                    f"{ident.hex}_{index}",
+                                    s.applications_for(session),
+                                    literal=literal,
                                 )
                             if step.action == "assert_text":
                                 checks.append({"step": index + 1, "passed": True})
@@ -270,7 +272,7 @@ class PlaybackEngine:
                                                 next_check,
                                                 inputs,
                                                 f"{ident.hex}_{index}_reconcile",
-                                                s.applications,
+                                                s.applications_for(session),
                                                 literal=literal,
                                             )
                                         recovered = True
@@ -368,9 +370,10 @@ class PlaybackEngine:
         r = (
             await db.execute(select(Playback).where(Playback.id == ident, Playback.tenant_id == tenant))
         ).scalar_one_or_none()
-        if not r:
+        if not r or r.owner_id != user.id:
             fail(404, "Execution not found")
-        await self.service.workflow(db, user, r.workflow_id)
+        if await db.get(Workflow, r.workflow_id) is None:
+            fail(404, "Execution workflow not found")
         return r
 
     async def cancel(self, db: AsyncSession, user: User, ident: uuid.UUID) -> dict:
@@ -388,8 +391,14 @@ class PlaybackEngine:
                 released = False
                 try:
                     native = "run_" + r.agent_run_id.hex if r.agent_run_id else "play_" + r.id.hex
-                    await self.service.driver.release(native)
-                    released = True
+                    # A restarted gateway has lost its nonce; only host expiry
+                    # can settle that old lease. Never claim an unbound release.
+                    managed = bool(self.service.config.sandbox_url) and (
+                        not r.agent_run_id or str(r.agent_run_id) not in self.service.config.legacy_run_ids
+                    )
+                    if not managed:
+                        await self.service.driver.release(native)
+                        released = True
                 except DriverFailure:
                     pass
                 r.status, r.updated_at = "unknown", now()

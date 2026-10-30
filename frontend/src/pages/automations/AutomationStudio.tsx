@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { automationApi } from "./api";
 import type { Recording, Script, Workflow, WorkflowSummary } from "./contracts";
+import { CloudDesktops } from "./CloudDesktops";
 import { RecordingPanel } from "./RecordingPanel";
 import { ScriptEditor } from "./ScriptEditor";
 import { RunPanel } from "./RunPanel";
@@ -22,6 +23,7 @@ const tabs: { id: Tab; label: string }[] = [
 
 export function AutomationStudio() {
   const [query, setQuery] = useSearchParams();
+  const desktops = query.get("view") === "desktops";
   const [selected, setSelected] = useState(query.get("workflow") || "");
   const selectedRef = useRef(selected);
   useEffect(() => {
@@ -176,6 +178,20 @@ export function AutomationStudio() {
         <div className="auto-row">
           <button
             className="btn btn-secondary"
+            onClick={() =>
+              setQuery(
+                desktops
+                  ? selected
+                    ? { workflow: selected }
+                    : {}
+                  : { view: "desktops" },
+              )
+            }
+          >
+            {desktops ? "流程库" : "云电脑"}
+          </button>
+          <button
+            className="btn btn-secondary"
             onClick={() => setAuthoring(true)}
           >
             编写脚本
@@ -207,7 +223,20 @@ export function AutomationStudio() {
           </button>
         </div>
       )}
-      <div className="auto-workspace">
+      {desktops && (
+        <CloudDesktops
+          onRecordingCreated={async (id) => {
+            setSelected(id);
+            setQuery({ workflow: id, tab: "record" });
+            await refreshList();
+          }}
+        />
+      )}
+      <div
+        className="auto-workspace"
+        hidden={desktops}
+        style={desktops ? { display: "none" } : undefined}
+      >
         <aside className="auto-library">
           <div className="auto-library-title">
             <strong>流程库</strong>

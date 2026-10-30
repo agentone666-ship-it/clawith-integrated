@@ -786,3 +786,175 @@ publication/registry tests passed after the final typed helper/description
 update. Ruff, scoped Pyright, ESLint and production builds passed. The capability
 and conservative frontend assets were deployed; the primary Runtime was not
 restarted. Previous already-published versions remain unchanged.
+
+### Persistent account/Agent Windows sandboxes (2026-10-30)
+
+The user's accepted contract replaces the shared desktop for managed execution:
+account owns data; each `(tenant, origin user, Agent)` owns an independent,
+persistent Windows VM. Personal login state, installed software, application
+state and files survive compute reclamation. The clean image is used only at
+first creation. A used/personalized VM never becomes another account's pool
+member. Multiple Agents of one account run separate guest processes/disks and
+browser profiles. Sharing a published Tool or workflow shares source, not a VM
+or its creator's login state. No writable browser profile is concurrently mounted.
+
+The host service `sandbox_host` is the sole lifecycle/lease authority. It owns
+private SQLite identity records, independent qcow2 overlays, NVRAM/vTPM state,
+libvirt domains and operation leases. Only this service has hypervisor access;
+the capability/Runtime have neither a hypervisor socket nor Windows credentials.
+The capability resolves actual Run origin/tenant/Agent after existing authority
+checks; model arguments cannot select an owner or VM. Manual-only recording and
+trials use an account-private studio desktop; Agent-created workflows remember
+their originating Agent for later manual trials. Published invocation always
+uses the invoking Run's account and Agent, never the publisher's environment.
+
+`AUTOMATION_SANDBOX_URL` plus a private token file explicitly selects the managed
+provider. No managed action silently falls back to the former shared desktop.
+The unconfigured legacy route remains solely for existing single-desktop installs
+and regression compatibility; remove it when those installs migrate. Private
+inventory/actions are transported through existing Clawith authentication under
+`/automations/desktops`; even tenant administrators see only their own desktops
+there. Guest tokens/passwords and provider addresses never appear in inventory.
+
+The host admits at most two computed desktops initially, configured as two vCPUs
+and 4 GiB guest memory each, with storage reserve and account instance limits.
+Capacity reservations include failed VMs whose compute release is unconfirmed.
+The desktop can only have one operation lease; sessions belonging to the same
+Run share a lease and release it only after their last consumer. Heartbeats
+follow genuine active Runs, running playbacks or active recordings, not keyboard
+input. Ninety seconds without heartbeat fences the old nonce; later commands
+cannot resurrect it. In-flight dispatch and startup are protected from sweeping.
+Backend heartbeat loss does not replay business input or claim business success.
+
+After ten minutes without an active lease, libvirt managed-save stops the domain
+and releases memory/CPU while retaining its disk and state. Plain suspend/pause
+is not compute release. A save failure remains error/compute-held, not saved.
+Manual save is denied while occupied. Restoring reuses only that account/Agent's
+own matched memory/device/disk state. Never restore a saved RAM state against
+modified disks, and never clone a personalized RAM state to another identity.
+New templates must be versioned and immutable; do not overwrite a backing image
+already referenced by existing overlays. Backups and retained user-data deletion
+are separate administrative policies, not task completion side effects.
+
+Cold startup runs as a host-owned job. A Tool waits up to8 seconds before an
+actionable preparing response with no input dispatched; the startup continues
+without a blind business retry. Readiness requires an authenticated real guest
+screenshot, not a running container. Restore compatibility pins virtual hardware;
+upgrades need save/restore and GUI tests before image rollout. Libvirt isolated
+guest ports plus host firewall rules block guest-to-guest and host-management
+access while allowing DNS/DHCP and business-network egress.
+
+The management entry uses existing product styles and same-page navigation.
+It exposes state, configured resources, occupied status, start/restore and save.
+Creation is automatic at authorized first use; users do not configure VM images,
+ports, CPU or routing. Existing direct and playback live previews remain private
+Run-owned evidence and never acquire another desktop just to observe it.
+
+Cold-start preparing is a no-input acknowledgement, not a failed business
+execution. Computer/registry MCP normalize it without claiming task completion.
+Manual recording/tests retry only HTTP425 with the identical operation request
+ID within600s; connection failures and uncertain inputs are never auto-replayed.
+
+Cutover preserves explicitly configured, already-active legacy Run IDs on the
+old desktop and application paths. This is an operator-generated immutable Run
+allowlist, not model input or a general fallback. All new Runs use managed
+desktops. Remove the allowlist after those Runs end; keep the old VM until its
+remaining owners are reconciled. Updating the capability requires no active
+recordings/playbacks or in-flight desktop Tool receipts. Main Runtime stays up.
+
+The cloud-desktop recording shortcut creates a workflow associated with that
+selected Agent in one transaction, then opens its recording tab in the same
+SPA. It does not assign or alter any employee Tool binding.
+
+Template preparation must run Sysprep in an elevated administrator session,
+never as Local System (QGA itself runs as System). Microsoft documents missing
+XAML registrations after System-context Sysprep on modern Windows. The sealed
+development template records its actual non-System principal and image state.
+Disable only the first-logon animation; retain app-readiness/update services.
+The one-time instance password change occurs before personal use and includes
+a new interactive logon, so subsequent personal credentials are created under
+the permanent instance identity. Restores never reset that password.
+See https://learn.microsoft.com/en-us/troubleshoot/windows-client/setup-upgrade-and-drivers/sysprep-as-system-windows-11.
+
+The current provider also owns the pinned `windows_bridge.py.in` guest asset.
+Only this trusted asset is uploaded (bounded command chunks below Windows'
+32 KiB command-line limit); hosted business code never enters this bootstrap.
+Read-only native calls idempotently start/renew the same authorized Cua label
+after native idle expiry. Released manual labels remain closed. Inputs are
+never automatically restarted or replayed after native session failure.
+Readiness captures use the ordinary45s screenshot budget and one stable probe
+label, avoiding false timeouts that strand successive temporary labels.
+
+Per-instance automatic logon updates the Windows LSA `DefaultPassword` secret
+and removes the plaintext registry password, so a stale template LSA secret
+cannot override the instance identity. The initial user-scoped XAML registration
+is applied by a bounded restart; killing SiHost can log off the desktop. The
+hidden controller uses separate native stdout/stderr file redirection so normal
+Uvicorn stderr logging cannot terminate a PowerShell wrapper.
+
+The network's permanent DHCP reservation is the IP/MAC authority. Allocation is
+host-file locked, excludes live dynamic leases, and refuses pool exhaustion.
+Per-port clean-traffic filtering enforces the reserved IP/MAC and ARP identity;
+bridge isolation alone does not prevent poisoning the host neighbor table.
+The capability forwards only active Run IDs for the same account/Agent in
+managed mode; the explicit legacy route retains its former shared scope.
+
+Save returns saved only when a managed image exists; absent/shut-down desktops
+return stopped. Unconfirmed/invalid provider outcomes retain compute capacity
+and an error state. Zstd snapshot storage is configured only on an owned libvirt
+host, with all its registered domains stopped during the initial driver change.
+Foreign domains prevent this global configuration change. Existing raw save
+images remain readable. The setup script preserves existing private host config.
+
+### Development deployment acceptance, 2026-10-30
+
+The running development capability now uses the private libvirt provider, with
+an additive `desktop_automation` migration through003. The main Runtime
+container identity stayed unchanged. The pre-cutover Run remains explicitly
+pinned to the old desktop; its VM was retained. New Runs have no shared fallback.
+
+Two existing accounts and two Agents produced four distinct persistent VMs.
+Live API checks confirmed disjoint account inventories and404 for cross-account
+start, save and recording shortcuts, including the second account's org-admin
+role. The real guest could not connect to another running guest's8090 port or
+the host's SSH/lifecycle ports. Host-to-guest authenticated desktop capture
+remained available. This is bounded acceptance, not an isolation penetration test.
+
+A genuine chat Run using the development Agent's existing MiniMax model appended
+a unique line through the Computer Tool and saved Notepad. An independent guest
+file read verified both the existing text and the appended line on disk. A second
+real Run exposed a cached desktop image while its lane was still held. The
+actual screenshot was visually checked; it contained the correct private
+Notepad window. The model's description of a blank desktop was inaccurate;
+this acceptance does not establish the model's screenshot interpretation quality.
+Read-only RPA and Python fixture trials both passed on the same Agent desktop,
+with live frames observed while running and private results denied to the other
+account. Those fixture scripts are infrastructure-authored, not model-authored
+business-script evaluations.
+
+Three current Zstd save/restore pairs measured27.6–33.5s to confirmed QEMU exit
+and18.8–24.7s through authenticated desktop capture. The same guest PID/window
+and unsaved Notepad buffer survived each cycle. A separate earlier raw-format
+set also completed three pairs. These shared-host samples overlapped another
+VM's initialization and are not a controlled compression performance comparison.
+A fresh clone with the final bootstrap initialized automatically in497.19s with
+no manual guest repair. A prior incomplete clone recovered automatically in
+299.22s; that recovery is not a fresh-provisioning latency sample.
+
+CurrentUser-DPAPI protected synthetic login data and a mock Credential Manager
+entry survived restoration. No real business-system SSO renewal was tested.
+Idle600s reclamation was observed physically stopping QEMU while retaining disk
+and saved memory. Busy save was rejected. All four acceptance desktops were
+returned to saved state after testing, retaining data. Initial capacity is two
+simultaneous2-vCPU/4-GiB desktops. The development image uses Windows Enterprise
+LTSC Evaluation; production Windows licensing and backup retention remain
+operator deployment work. The management page was checked at1440px and1024px;
+the existing product-wide narrow/mobile sidebar layout remains outside this
+capability's acceptance.
+
+Focused backend verification:88 tests passed across desktop/registry/publication,
+bridge, scope/privacy and installer-admission suites. TypeScript/build and
+scoped Python static checks passed. Installer tests cover owned stopped domains,
+foreign/active rejection, idempotence and restoring configuration after a failed
+driver restart. Recorded deployment receipts and private screenshots live in
+the task-specific server handoff directory, not the Runtime or user memory.

@@ -22,7 +22,7 @@ from app.services.tool_config import encrypt_sensitive_fields
 
 from .code_contracts import ManagedScript, PythonScript, kind, load_script
 from .contracts import PARAMETER, Script, Step
-from .driver import CuaDriver, DriverFailure
+from .driver import CuaDriver, DesktopPreparing, DriverFailure
 from .models import Playback, Recording, RecordingAction, Version, Workflow, now
 from .settings import Settings
 
@@ -86,7 +86,14 @@ class AutomationService:
         ]
 
     async def create(
-        self, db: AsyncSession, user: User, name: str, description: str, script: ManagedScript | None = None
+        self,
+        db: AsyncSession,
+        user: User,
+        name: str,
+        description: str,
+        script: ManagedScript | None = None,
+        *,
+        desktop_agent_id: uuid.UUID | None = None,
     ) -> dict:
         tenant = self.authorize(user)
         count = (
@@ -97,6 +104,7 @@ class AutomationService:
         row = Workflow(
             tenant_id=tenant,
             owner_id=user.id,
+            desktop_agent_id=desktop_agent_id,
             name=name,
             description=description,
             draft=(script or Script()).model_dump(),
@@ -118,7 +126,7 @@ class AutomationService:
         runs = (
             await db.execute(
                 select(Playback)
-                .where(Playback.workflow_id == w.id, Playback.tenant_id == w.tenant_id)
+                .where(Playback.workflow_id == w.id, Playback.tenant_id == w.tenant_id, Playback.owner_id == user.id)
                 .order_by(Playback.created_at.desc())
                 .limit(40)
             )
@@ -130,6 +138,7 @@ class AutomationService:
                     .where(
                         Recording.workflow_id == w.id,
                         Recording.tenant_id == w.tenant_id,
+                        Recording.owner_id == user.id,
                         Recording.status.in_(["active", "release_pending"]),
                     )
                     .order_by(Recording.created_at.desc())
@@ -334,9 +343,47 @@ class AutomationService:
             "tool_id": str((await self.version(db, user, ident, version_id)).tool_id),
         }
 
+    def applications_for(self, session: str) -> dict:
+        if self.config.sandbox_url and session not in self.driver.legacy_sessions:
+            return json.loads(os.getenv("AUTOMATION_MANAGED_APPLICATIONS", json.dumps(self.applications)))
+        return self.applications
+
+    async def desktop_active_runs(self, db: AsyncSession, actor: AgentRun) -> list[uuid.UUID]:
+        stmt = select(AgentRun.id).where(AgentRun.tenant_id == actor.tenant_id, AgentRun.lane_held.is_(True))
+        if self.config.sandbox_url and str(actor.id) not in self.config.legacy_run_ids:
+            stmt = stmt.where(AgentRun.agent_id == actor.agent_id, AgentRun.origin_user_id == actor.origin_user_id)
+        values = list((await db.execute(stmt.limit(257))).scalars().all())
+        if len(values) > 256:
+            fail(409, "Too many active desktop task identities")
+        return values
+
+    def bind_desktop(
+        self, session: str, user: User, agent_id: uuid.UUID | None = None, actor: AgentRun | None = None
+    ) -> None:
+        if self.config.sandbox_url:
+            if actor is not None and str(actor.id) in self.config.legacy_run_ids:
+                self.driver.legacy_sessions.add(session)
+                return  # Explicitly pinned pre-cutover Runs retain their original desktop.
+            tenant = self.authorize(user)
+            owner = actor.origin_user_id if actor else user.id
+            if owner is None:
+                fail(403, "A desktop requires an authenticated origin account")
+            gateway = self.driver.sandbox
+            if gateway is None:
+                raise RuntimeError("Configured sandbox gateway is missing")
+            gateway.bind(
+                session,
+                tenant,
+                owner,
+                actor.agent_id if actor else agent_id,
+                "run_" + actor.id.hex if actor else session,
+            )
+
     async def assert_desktop_idle(
         self, db: AsyncSession, *, ignore_playback: uuid.UUID | None = None, ignore_agent_run: uuid.UUID | None = None
     ) -> None:
+        if self.config.sandbox_url:
+            return  # Host manager owns exclusion per account + Agent, not globally.
         raw_active = (
             await db.execute(
                 select(AgentRun.id)
@@ -402,7 +449,8 @@ class AutomationService:
         ).scalar_one_or_none()
         if r is None:
             fail(404, "Recording not found")
-        await self.workflow(db, user, r.workflow_id)
+        w = await self.workflow(db, user, r.workflow_id)
+        self.bind_desktop("record_" + r.id.hex, user, w.desktop_agent_id)
         if r.status != "active" and not (allow_release_pending and r.status == "release_pending"):
             fail(409, "Recording is no longer active")
         return r
@@ -424,9 +472,13 @@ class AutomationService:
                 script=Script().model_dump(),
                 status="active",
             )
+            self.bind_desktop("record_" + r.id.hex, user, w.desktop_agent_id)
             # Claim the native desktop before publishing an active recording.
             try:
                 await self.driver.frame("record_" + r.id.hex)
+            except DesktopPreparing as exc:
+                await self.driver.release("record_" + r.id.hex)
+                fail(425, str(exc))
             except DriverFailure as exc:
                 fail(409, str(exc))
             db.add(r)
@@ -438,6 +490,8 @@ class AutomationService:
             r = await self.recording(db, user, ident)
             r.last_seen = now()
             await db.commit()
+            w = await self.workflow(db, user, r.workflow_id)
+            self.bind_desktop("record_" + r.id.hex, user, w.desktop_agent_id)
             frame = await self.driver.frame("record_" + r.id.hex)
             return {**frame, "windows": await self.driver.windows("record_" + r.id.hex)}
 
@@ -524,7 +578,9 @@ class AutomationService:
             await db.commit()
             status, detail = "recorded", "操作已记录" if not r.paused else "操作已执行，录制已暂停"
             try:
-                await self.driver.execute("record_" + r.id.hex, anchored, values, request_id, self.applications)
+                await self.driver.execute(
+                    "record_" + r.id.hex, anchored, values, request_id, self.applications_for("record_" + r.id.hex)
+                )
             except DriverFailure as exc:
                 status, detail = ("unknown" if exc.uncertain else "failed"), str(exc)
                 r.paused = True

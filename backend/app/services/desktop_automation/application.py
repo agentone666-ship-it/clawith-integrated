@@ -10,6 +10,7 @@ from app.api.desktop_automation import router
 
 from .computer import Computer
 from .computer import router as computer_router
+from .driver import DriverFailure
 from .executor import PlaybackEngine
 from .mcp import router as mcp_router
 from .registry import AutomationRegistry
@@ -28,9 +29,13 @@ async def lifespan(app: FastAPI):
     app.state.automation_registry = AutomationRegistry(service, engine)
     await engine.recover()
     maintenance = asyncio.create_task(engine.maintenance())
+    sandbox_heartbeat = asyncio.create_task(service.driver.sandbox.heartbeat()) if service.driver.sandbox else None
     yield
     maintenance.cancel()
     await asyncio.gather(maintenance, return_exceptions=True)
+    if sandbox_heartbeat:
+        sandbox_heartbeat.cancel()
+        await asyncio.gather(sandbox_heartbeat, return_exceptions=True)
     await app.state.desktop_computer.close()
     await engine.close()
 
@@ -45,6 +50,11 @@ app.include_router(mcp_router)
 @app.exception_handler(ValueError)
 async def invalid_input(request, exc):
     return JSONResponse({"detail": str(exc)[:1000]}, status_code=422)
+
+
+@app.exception_handler(DriverFailure)
+async def desktop_failure(request, exc):
+    return JSONResponse({"detail": str(exc)[:1000]}, status_code=503)
 
 
 @app.get("/health")

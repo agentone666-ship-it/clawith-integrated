@@ -221,3 +221,11 @@ Automation management publish returns verified-draft readiness only. Creating
 an immutable version requires the authenticated user's publication action.
 A chat confirmation carries the displayed trial digest; the workflow owner
 checks digest/revision and avoids duplicate versions on repeated confirmation.
+
+Persistent Windows desktops are owned by `desktop_automation/sandbox_host`, a
+private host service with hypervisor access. The capability supplies verified
+tenant, origin account and Agent identities through `sandbox.py`; the Runtime
+and capability never receive libvirt/Docker sockets or guest credentials.
+In managed mode exclusion is per desktop, not global. Computer Use, recorded
+RPA and Python playback share this route. Idle reclamation saves VM state and
+releases compute, retaining account-owned disks. See the owning desktop note.

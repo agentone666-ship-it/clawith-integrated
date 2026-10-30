@@ -14,6 +14,9 @@ class Settings:
     signing_key: str
     evidence_dir: Path
     driver_tool_id: str
+    sandbox_url: str = ""
+    sandbox_token: str = ""
+    legacy_run_ids: tuple[str, ...] = ()
     compiler_url: str = ""
     compiler_token: str = ""
 
@@ -37,8 +40,13 @@ class Settings:
             Path(os.environ[required[4]]).read_text().strip(),
             Path(os.getenv("AUTOMATION_EVIDENCE_DIR", "/data/desktop-automation")),
             os.environ[required[5]],
-            os.getenv("AUTOMATION_COMPILER_URL", ""),
-            Path(os.environ["AUTOMATION_COMPILER_TOKEN_FILE"]).read_text().strip()
+            sandbox_url=os.getenv("AUTOMATION_SANDBOX_URL", ""),
+            sandbox_token=Path(os.environ["AUTOMATION_SANDBOX_TOKEN_FILE"]).read_text().strip()
+            if os.getenv("AUTOMATION_SANDBOX_URL")
+            else "",
+            legacy_run_ids=tuple(x for x in os.getenv("AUTOMATION_LEGACY_RUN_IDS", "").split(",") if x),
+            compiler_url=os.getenv("AUTOMATION_COMPILER_URL", ""),
+            compiler_token=Path(os.environ["AUTOMATION_COMPILER_TOKEN_FILE"]).read_text().strip()
             if os.getenv("AUTOMATION_COMPILER_TOKEN_FILE")
             else "",
         )

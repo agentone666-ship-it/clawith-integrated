@@ -130,3 +130,14 @@ async def test_specific_computer_route_precedes_version_wildcard(fixture):
         response = await client.post("/api/automation-mcp/computer", json={})
         assert response.status_code == 401
     assert not service.driver.owners
+
+
+async def test_release_also_settles_preparing_session_without_a_watcher(fixture):
+    service, _, _ = fixture
+    value = actor()
+    session = "computer_" + value.id.hex
+    service.driver.owners.add(session)
+    computer = Computer(service)
+    assert not computer.tasks
+    await computer.call(DB(value), value, {"action": "release"})
+    assert not service.driver.owners

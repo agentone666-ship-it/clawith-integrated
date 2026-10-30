@@ -23,6 +23,7 @@ class Workflow(AutomationBase):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
     owner_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    desktop_agent_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     name: Mapped[str] = mapped_column(String(120))
     description: Mapped[str] = mapped_column(String(1000), default="")
     draft: Mapped[dict] = mapped_column(JSON, default=dict)

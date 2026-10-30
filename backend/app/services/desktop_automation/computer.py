@@ -15,7 +15,7 @@ from app.models.agent_run import AgentRun
 from app.models.tool import AgentTool, Tool
 from app.models.user import User
 
-from .driver import DriverFailure
+from .driver import DesktopPreparing, DriverFailure
 from .live import read_frame, store
 from .service import fail
 
@@ -98,33 +98,31 @@ class Computer:
         session = "computer_" + actor.id.hex
         if args.get("action") == "release":
             await self.stop(actor.id)
+            async with s.lock:
+                await s.driver.release(session)
             return {"content": [{"type": "text", "text": "Desktop released; last captured frame retained."}]}
         for ident, task in list(self.tasks.items()):
             if task.done():
                 self.tasks.pop(ident)
         async with s.lock:
             await s.assert_desktop_idle(db, ignore_agent_run=actor.id)
-            active = (
-                (
-                    await db.execute(
-                        select(AgentRun.id)
-                        .where(AgentRun.tenant_id == actor.tenant_id, AgentRun.lane_held.is_(True))
-                        .limit(257)
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            if len(active) > 256:
-                fail(409, "Too many active Runtime identities")
+            active = await s.desktop_active_runs(db, actor)
             s.driver.runtime_contexts[session] = {
                 "run_id": str(actor.id),
                 "agent_id": str(actor.agent_id),
                 "tenant_id": str(actor.tenant_id),
                 "active_run_ids": [str(i) for i in active],
             }
+            origin = await db.get(User, actor.origin_user_id)
+            if origin is None:
+                fail(403, "Desktop origin account is unavailable")
+            s.bind_desktop(session, origin, actor=actor)
             # Initial capture makes the viewer available before a slow action.
             await self.capture(actor, session)
+            if s.config.sandbox_url:
+                await db.refresh(actor)
+                if not actor.lane_held:
+                    fail(403, "Task ended while the desktop was preparing; no input was dispatched")
             if actor.id not in self.tasks or self.tasks[actor.id].done():
                 # Completed watchers no longer own provider state.
                 self.tasks[actor.id] = asyncio.create_task(self.watch(actor, session))
@@ -196,6 +194,12 @@ async def computer_mcp(req: Request):
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "clawith-cua-computer", "version": "1"},
             },
+        }
+    except DesktopPreparing as exc:
+        return {
+            "jsonrpc": "2.0",
+            "id": body.get("id"),
+            "result": {"isError": False, "content": [{"type": "text", "text": str(exc)}]},
         }
     except (HTTPException, ValueError, TypeError, DriverFailure) as exc:
         message = exc.detail if isinstance(exc, HTTPException) else str(exc)

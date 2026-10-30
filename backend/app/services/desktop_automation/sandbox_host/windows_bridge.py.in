@@ -1,0 +1,250 @@
+"""Model-free HTTP MCP adapter for one isolated Cua Driver desktop."""
+import asyncio
+import base64
+from contextlib import asynccontextmanager
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import signal
+import time
+import uuid
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import uvicorn
+
+os.environ['PATH']='C:/Clawith/Python;'+os.environ.get('PATH','')
+STATE = Path('C:/Clawith/state')
+TOKEN = Path('C:/Clawith/private/token').read_text(encoding="utf-8").strip()
+SAFE = {'list_apps','list_windows','get_window_state','get_desktop_state',
+        'get_accessibility_tree','get_screen_size','click','double_click','right_click',
+        'type_text','press_key','hotkey','scroll','drag','set_value','launch_app'}
+READS = {'list_apps','list_windows','get_window_state','get_desktop_state',
+         'get_accessibility_tree','get_screen_size'}
+
+def compact_schema(value):
+    """Keep native parameter constraints while bounding repeated prose."""
+    if isinstance(value,dict):
+        return {k:(v[:220] if k=='description' and isinstance(v,str) else compact_schema(v))
+                for k,v in value.items()}
+    if isinstance(value,list):return [compact_schema(v)for v in value]
+    return value
+
+
+class Driver:
+    def __init__(self):
+        self.proc = None
+        self.pending = {}
+        self.counter = 0
+        self.tools = {}
+        self.lock = asyncio.Lock()
+        self.owner = None
+        self.owner_context = None
+        self.expires = 0
+
+    async def start(self):
+        self.log = Path('C:/Clawith/out/driver.log').open('ab')
+        self.proc = await asyncio.create_subprocess_exec(
+            'C:/Clawith/cua/cua-driver.exe', 'mcp', '--direct', '--no-overlay',
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            stderr=self.log, limit=16*1024*1024)
+        self.reader = asyncio.create_task(self.read())
+        await self.request('initialize', {'protocolVersion':'2025-03-26',
+            'capabilities':{},'clientInfo':{'name':'Clawith-Cua-atomic-adapter','version':'1'}})
+        await self.send({'jsonrpc':'2.0','method':'notifications/initialized'})
+        reply = await self.request('tools/list', {})
+        self.tools = {t['name']:t for t in reply.get('result',{}).get('tools',[]) if t['name'] in SAFE}
+        if not self.tools:
+            raise RuntimeError('Cua Driver advertised no permitted tools')
+        Path('C:/Clawith/out/native-tool-schemas.json').write_text(json.dumps(self.tools,ensure_ascii=False,indent=2),encoding="utf-8")
+
+    async def send(self, body):
+        self.proc.stdin.write((json.dumps(body)+'\n').encode())
+        await self.proc.stdin.drain()
+
+    async def request(self, method, params, timeout=40):
+        self.counter += 1
+        ident = self.counter
+        future = asyncio.get_running_loop().create_future()
+        self.pending[ident] = future
+        try:
+            await self.send({'jsonrpc':'2.0','id':ident,'method':method,'params':params})
+            return await asyncio.wait_for(future, timeout)
+        finally:
+            self.pending.pop(ident,None)
+
+    async def read(self):
+        try:
+            while line := await self.proc.stdout.readline():
+                msg = json.loads(line)
+                future = self.pending.get(msg.get('id'))
+                if future and not future.done():
+                    future.set_result(msg)
+        finally:
+            for f in list(self.pending.values()):
+                if not f.done(): f.set_exception(RuntimeError('Cua Driver connection closed'))
+
+    async def stop(self):
+        if self.proc and self.proc.returncode is None:
+            self.proc.terminate()
+            try: await asyncio.wait_for(self.proc.wait(),3)
+            except TimeoutError:
+                self.proc.kill()
+                await self.proc.wait()
+        if getattr(self,'reader',None):
+            self.reader.cancel()
+            await asyncio.gather(self.reader,return_exceptions=True)
+        if getattr(self,'log',None): self.log.close()
+
+    async def call(self, args, runtime=None):
+        if not isinstance(args,dict) or set(args)-{'action','params','session_id','request_id'}:
+            raise ValueError('Unsupported arguments')
+        action=args.get('action'); params=args.get('params',{})
+        if not isinstance(params,dict): raise ValueError('params must be an object')
+        if action=='help':
+            name=params.get('name')
+            if name and name not in self.tools: raise ValueError('Unknown action schema')
+            definition={'name':name,'inputSchema':compact_schema(self.tools[name]['inputSchema'])} if name else sorted(self.tools)
+            return {'content':[{'type':'text','text':json.dumps({'tools':definition,
+                'usage':'For exact schema use action=help, params={name:ACTION}. Runtime automatically owns the desktop session; omit session_id and params.session. Do not change sessions to recover an error. Writes need request_id: fresh for a new action, same for an identical retry. Input targets this VM interactive desktop. Discover actual Windows application names and use exact native schemas.'},ensure_ascii=False)}]}
+        if runtime is not None:
+            sid='run_'+runtime['run_id'].replace('-','')
+            params={k:v for k,v in params.items()if k!='session'}
+        else:
+            sid=args.get('session_id')
+        if not isinstance(sid,str) or not re.fullmatch('[a-zA-Z0-9_-]{6,80}',sid):
+            raise ValueError('Provide session_id of 6-80 letters, digits, _ or -')
+        closed=STATE/'closed'/sid
+        if runtime is None and closed.exists() and action!='release':
+            raise ValueError('This session was released. Use a NEW session_id for a new task; no action was dispatched.')
+        async with self.lock:
+            if self.owner and self.owner!=sid:
+                expired=time.monotonic()>=self.expires
+                finished=(runtime is not None and self.owner_context is not None
+                    and runtime['tenant_id']==self.owner_context['tenant_id']
+                    and self.owner_context['run_id'] not in runtime['active_run_ids'])
+                if expired or finished:
+                    ended=await self.request('tools/call',{'name':'end_session','arguments':{'session':self.owner}})
+                    if ended.get('result',{}).get('isError'):
+                        raise ValueError('Previous desktop session could not be released; no action was dispatched')
+                    with Path('C:/Clawith/out/leases.jsonl').open('a',encoding='utf-8')as log:
+                        log.write(json.dumps({'at':time.time(),'event':'released','session':self.owner,
+                            'reason':'runtime_lane_released'if finished else'lease_expired'})+'\n')
+                    self.owner=None;self.owner_context=None
+            if self.owner and self.owner!=sid and time.monotonic()<self.expires:
+                remaining=max(1,int(self.expires-time.monotonic()))
+                raise ValueError(f'Desktop is in use by another active task. Do not invent a new session or force release it. Retry after that task finishes (lease remaining {remaining}s); no action was dispatched.')
+            if action=='release':
+                if self.owner==sid:
+                    await self.request('tools/call',{'name':'end_session','arguments':{'session':sid}})
+                    self.owner=None;self.owner_context=None
+                    if runtime is None:closed.touch()
+                return {'content':[{'type':'text','text':'Desktop session released; existing application state remains.'}]}
+            if action not in self.tools: raise ValueError('Action is not exposed; use help')
+            ident=args.get('request_id')
+            write=action not in READS
+            if write and (not isinstance(ident,str) or not re.fullmatch('[a-zA-Z0-9_-]{6,80}',ident)):
+                raise ValueError('Each write needs request_id; retry a write with the same id')
+            if 'session' in params and params['session']!=sid:
+                raise ValueError('Native session must match session_id')
+            if 'delivery_mode' in self.tools[action]['inputSchema'].get('properties',{}):
+                params={'delivery_mode':'foreground',**params}
+            prior_owner=self.owner
+            # Reads renew this already-authorized native session idempotently after idle.
+            # Closed manual labels were rejected above; never replay an input here.
+            if (runtime is not None and prior_owner!=sid) or action in READS:
+                started=await self.request('tools/call',{'name':'start_session','arguments':{'session':sid}})
+                if started.get('result',{}).get('isError'):
+                    return started['result']
+            self.owner=sid; self.expires=time.monotonic()+300
+            self.owner_context=runtime
+            params={**params,'session':sid}
+            fingerprint=hashlib.sha256(json.dumps([action,params],sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+            receipt=STATE/'calls'/f'{sid}-{ident}.json' if write else None
+            if receipt and receipt.exists():
+                saved=json.loads(receipt.read_text(encoding="utf-8"))
+                if saved['fingerprint']!=fingerprint: raise ValueError('request_id already used with different arguments')
+                return saved.get('result',{'isError':True,'content':[{'type':'text','text':'Prior action outcome unknown. Inspect fresh desktop state; no replay performed.'}]})
+            if receipt:
+                receipt.write_text(json.dumps({'fingerprint':fingerprint,'status':'dispatched'}),encoding='utf-8');receipt.chmod(0o600)
+            started=time.monotonic()
+            try:
+                response=await self.request('tools/call',{'name':action,'arguments':params})
+                result=response.get('result')
+                if not isinstance(result,dict):
+                    raise RuntimeError('Driver returned invalid result: '+str(response.get('error',{}))[:400])
+            except (TimeoutError,RuntimeError) as exc:
+                result={'isError':True,'content':[{'type':'text','text':f'Unknown action outcome ({type(exc).__name__}); inspect desktop before retrying. No automatic replay.'}]}
+            elapsed=round(time.monotonic()-started,3)
+            with Path('C:/Clawith/out/calls.jsonl').open('a',encoding='utf-8')as log:
+                log.write(json.dumps({'action':action,'session_id':sid,'request_id':ident,
+                    'seconds':elapsed,'isError':bool(result.get('isError'))})+'\n')
+            if receipt:
+                receipt.write_text(json.dumps({'fingerprint':fingerprint,'status':'returned','result':result},ensure_ascii=False),encoding='utf-8');receipt.chmod(0o600)
+            self.expires=time.monotonic()+300
+            if not write and result.get('isError') and prior_owner!=sid:
+                self.owner=None;self.owner_context=None
+            return result
+
+
+driver=Driver()
+
+@asynccontextmanager
+async def lifespan(app):
+    (STATE/'calls').mkdir(parents=True,exist_ok=True)
+    (STATE/'closed').mkdir(parents=True,exist_ok=True)
+    await driver.start()
+    yield
+    await driver.stop()
+
+app=FastAPI(lifespan=lifespan)
+
+@app.get('/health')
+async def health():
+    return {'ready':bool(driver.tools) and driver.proc.returncode is None,
+        'driver':'0.37.0','platform':os.name,'model_calls':0,'tools':sorted(driver.tools)}
+
+SCHEMA={'type':'object','properties':{
+ 'action':{'type':'string','enum':sorted(SAFE|{'help','release'})},
+ 'params':{'type':'object','description':'Cua Driver native parameters; help returns exact parameter schemas.','additionalProperties':True},
+ 'request_id':{'type':'string','description':'Required for each write action. Use a fresh id for a new action, reuse only when retrying that same action.'}
+},'required':['action'],'additionalProperties':False}
+
+@app.post('/mcp')
+async def mcp(req:Request):
+    if not secrets.compare_digest(req.headers.get('authorization',''),'Bearer '+TOKEN):
+        return JSONResponse({'error':'Unauthorized'},status_code=401)
+    raw=await req.body()
+    if len(raw)>131072:return JSONResponse({'error':'Request too large'},status_code=413)
+    body=json.loads(raw); ident=body.get('id'); method=body.get('method')
+    result={}
+    try:
+        if method=='initialize':result={'protocolVersion':'2025-03-26','capabilities':{'tools':{}},'serverInfo':{'name':'clawith-cua-driver-atomic','version':'1'}}
+        elif method=='tools/list':result={'tools':[{'name':'computer','description':
+            'Direct model-free Cua Driver control of an isolated Windows VM desktop. Runtime automatically binds and releases task sessions: do not supply session_id or params.session. First read get_desktop_state/list_apps; use help params={name:ACTION} for exact params. Writes need request_id. Use list_apps to discover the Windows browser name before launch_app. Read state after writes; release when finished. No child model calls; never controls the user Mac.',
+            'inputSchema':SCHEMA}]}
+        elif method=='tools/call':
+            p=body.get('params',{})
+            if p.get('name')!='computer':raise ValueError('Unknown tool')
+            runtime=(p.get('_meta')or{}).get('io.clawith/runtime')
+            if runtime is not None:
+                if not isinstance(runtime,dict):raise ValueError('Invalid Runtime metadata')
+                for key in ['tenant_id','run_id','agent_id']:
+                    value=runtime.get(key)
+                    if not isinstance(value,str):raise ValueError('Invalid Runtime identity')
+                    runtime[key]=str(uuid.UUID(value))
+                active=runtime.get('active_run_ids')
+                if not isinstance(active,list)or len(active)>256:raise ValueError('Invalid Runtime lane snapshot')
+                if any(not isinstance(v,str)for v in active):raise ValueError('Invalid Runtime lane ID')
+                runtime['active_run_ids']=[str(uuid.UUID(v))for v in active]
+                if runtime['run_id'] not in runtime['active_run_ids']:raise ValueError('Current Runtime run is missing')
+            result=await driver.call(p.get('arguments',{}),runtime=runtime)
+        elif method not in {'notifications/initialized','ping'}:raise ValueError('Unsupported MCP method')
+    except ValueError as exc:
+        result={'isError':True,'content':[{'type':'text','text':str(exc)}]}
+    return {'jsonrpc':'2.0','id':ident,'result':result}
+
+if __name__=='__main__':uvicorn.run(app,host='0.0.0.0',port=8090)

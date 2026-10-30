@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from app.database import async_session
 from app.models.tool import Tool
 
-from .driver import DriverFailure
+from .driver import DesktopPreparing, DriverFailure
 from .models import Playback
 from .registry import RegistryCall
 from .registry_schema import registry_schema
@@ -112,7 +112,10 @@ async def registry_mcp(req: Request):
             except (HTTPException, ValueError, TypeError, DriverFailure) as exc:
                 await db.rollback()
                 message = exc.detail if isinstance(exc, HTTPException) else str(exc)
-                result = {"isError": True, "content": [{"type": "text", "text": str(message)[:2000]}]}
+                preparing = isinstance(exc, DesktopPreparing) or (
+                    isinstance(exc, HTTPException) and exc.status_code == 425
+                )
+                result = {"isError": not preparing, "content": [{"type": "text", "text": str(message)[:2000]}]}
         elif method in {"notifications/initialized", "ping"}:
             result = {}
         else:

@@ -9,7 +9,9 @@ services:
       AUTOMATION_DRIVER_TOKEN_FILE: /run/automation/driver-token
       AUTOMATION_SIGNING_KEY_FILE: /run/automation/signing-key
       AUTOMATION_EVIDENCE_DIR: /data/desktop-automation
+      AUTOMATION_SANDBOX_TOKEN_FILE: /run/automation/sandbox-token
     volumes:
+      - ${AUTOMATION_SANDBOX_TOKEN_PATH:?Set the private Windows host gateway token path}:/run/automation/sandbox-token:ro
       - ${CUA_DRIVER_TOKEN_PATH:?Set the Cua bridge token path}:/run/automation/driver-token:ro
       - ${AUTOMATION_SIGNING_KEY_PATH:?Set the feature signing key path}:/run/automation/signing-key:ro
       - ${AUTOMATION_EVIDENCE_PATH:?Set the private evidence directory}:/data/desktop-automation

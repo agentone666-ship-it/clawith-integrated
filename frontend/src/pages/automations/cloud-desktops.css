@@ -1,0 +1,21 @@
+.auto-cloud-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.auto-cloud-header > div:first-child {
+  flex: 1;
+  min-width: 220px;
+}
+.auto-cloud-header .auto-muted {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 8px 0;
+}
+@media (max-width: 780px) {
+  .auto-cloud-header > .auto-row {
+    width: 100%;
+  }
+}

@@ -18,6 +18,24 @@ import type {
 const base = "/automations";
 const post = <T>(path: string, value: unknown = {}) =>
   request<T>(base + path, { method: "POST", body: JSON.stringify(value) });
+async function preparedPost<T>(path: string, value: unknown) {
+  const deadline = Date.now() + 600_000;
+  while (true) {
+    try {
+      return await post<T>(path, value);
+    } catch (error) {
+      if (
+        !(typeof error === "object" && error !== null && "status" in error) ||
+        error.status !== 425 ||
+        Date.now() >= deadline
+      )
+        throw error;
+      // Only 425 guarantees that preparation dispatched no desktop input.
+      // Reuse the identical operation ID; never retry an uncertain action.
+      await new Promise((resolve) => window.setTimeout(resolve, 3000));
+    }
+  }
+}
 export const automationApi = {
   authoring: (search: string, offset: number) =>
     request<AuthoringReadiness>(
@@ -68,7 +86,9 @@ export const automationApi = {
       }),
     }),
   record: (w: Workflow) =>
-    post<Recording>("/" + w.id + "/recordings", { revision: w.revision }),
+    preparedPost<Recording>("/" + w.id + "/recordings", {
+      revision: w.revision,
+    }),
   frame: (id: string) => request<Frame>(base + "/recordings/" + id + "/frame"),
   action: (
     id: string,
@@ -92,7 +112,7 @@ export const automationApi = {
     inputs: Record<string, string>,
     version_id: string | null = null,
   ) =>
-    post<Run>("/" + id + "/test", {
+    preparedPost<Run>("/" + id + "/test", {
       inputs,
       request_id: operationId(),
       version_id,
