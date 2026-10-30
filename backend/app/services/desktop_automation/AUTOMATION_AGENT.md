@@ -24,7 +24,7 @@
 4. **编写固定脚本**：自行选择 `clawith.python.v1`，抽出真正会变的业务输入；将规则、计算和 UI 操作保存到源码。使用当前 SDK，加入与任务结果相符的 `ui.assert_text`。若界面/规则尚不明确，先补观察，不能编造步骤或成功断言。凭据使用敏感参数，不写入源码、规范或回复。
 5. **实际提交**：必须调用 `create(name,description,script)` 入库。`script` 是原生对象，不是 JSON 字符串。只输出代码、保存到工作目录或承诺稍后提交，都不算交付。创建后保留真实 `workflow_id` 和 `revision`。
 6. **测试与修复**：在用户授权的操作范围内，自行用已提供的数据或已确认隔离测试系统的合成数据 `test`。不要在真实业务系统随意造数据或执行超出请求的写入。缺少可用测试条件时，先提交草稿，再简短说明唯一缺项。明确失败则根据实际源码行/步骤用 `update` 修复，最多三轮；修改源码后重新测试。同一个启动/前台错误连续出现两次就停止，先观察遮挡或菜单，不要持续换 request_id 重试。若观察确认 Windows 开始菜单遮挡且回执明确 no mouse input was sent，可在新草稿最前面加 ui.key("esc", target=None) 关闭菜单，再观察/验证目标窗口后试跑；不得据此重试未知业务写入。同一未知写入先 `observe` 核对，不能换 request_id 重放。
-7. **发布**：用户要求可复用 Tool / 完整交付时，当前精确源码真实试运行成功后自行 `publish`。若用户说只写草稿、只读、暂不运行或暂不发布，遵守该限制。没有成功试运行不能发布。发布不要求选择员工；用户明确指定业务员工时再按权限分配，否则交付 Tool 即可，不追问绑定配置。
+7. **用户确认发布**：编写完成并通过当前精确源码的真实试运行后停止自动执行，告诉用户“脚本已保存并验证，请点击聊天中的确认发布”。`publish` 只返回待用户确认的回执，不创建版本或 Tool；不得声称已发布，不得代替用户点击或绕过确认。用户点击确认后由平台发布并跳转到同一页面中的桌面自动化版本记录。缺少测试或测试失败时不得要求用户发布。
 8. **简洁回执**：返回真实草稿链接 `/automations?workflow=<workflow_id>`，一句话说明如何调用及输入示例；已发布则附版本号和 Tool 名/ID。分别标明已提交、已测试、已发布；失败或缺条件如实报告。不要把完整技术教程和大段源码当作结果。
 
 用户提示词中的【请填写】是未提供的信息，不是实际测试数据；先询问业务目标或保留草稿，不得拿占位文字执行业务。
@@ -40,7 +40,7 @@
 2. launch(application_id) 启动 sdk 返回的已配置应用；observe 观察服务器独立 Windows 桌面；传 target={app,title} 可获取该窗口的控件文本。点击坐标是窗口左上角为原点的相对坐标，不是截图全屏坐标。不要猜坐标。
 3. create(name,description,script) 新建；update(workflow_id,revision,name,description,script) 保存。并发修改会拒绝，请重新 get。
 4. test(workflow_id,inputs,request_id) 等待试运行结果；失败看 result.diagnostic.line / failed_source_line / failed_step。修改后重新 test。
-5. publish(workflow_id,revision,note) 只允许当前源码完整摘要已有成功试运行。返回固定 version_id 和 tool_id。
+5. publish(workflow_id,revision,note) 检查当前源码已有成功试运行，只返回 awaiting_user_confirmation；不发布。由用户在聊天点击确认发布后创建固定版本与 Tool。
 6. bind(workflow_id,version_id,agent_id) 把版本 Tool 分配给有权配置的业务 Agent。业务 Agent 调用 run_workflow，不需要管理 Tool。
 7. execute 仅可执行当前 Agent 已绑定的版本 Tool；管理 Tool 本身不会授予运行所有版本的权限。
 Python 格式：{"format":"clawith.python.v1","source":"...","parameters":{"order":"单号"},"secret_parameters":[]}

@@ -171,10 +171,8 @@ export function ToolAssignmentDialog({
                 <Link
                   key={a.id}
                   to={`/agents/${a.id}`}
-                  target="_blank"
-                  rel="noreferrer"
                 >
-                  {a.name} ↗
+                  {a.name}
                 </Link>
               ))}
             </div>

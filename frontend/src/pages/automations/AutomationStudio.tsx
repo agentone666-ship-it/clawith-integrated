@@ -79,7 +79,18 @@ export function AutomationStudio() {
         if (!stopped) {
           setWorkflow(w);
           setScript(w.draft);
-          setTab(w.draft.format === "clawith.python.v1" ? "edit" : "record");
+          const requested = new URLSearchParams(window.location.search).get(
+            "tab",
+          );
+          setTab(
+            requested === "versions" ||
+              requested === "runs" ||
+              requested === "edit"
+              ? requested
+              : w.draft.format === "clawith.python.v1"
+                ? "edit"
+                : "record",
+          );
         }
       })
       .catch((e) => {

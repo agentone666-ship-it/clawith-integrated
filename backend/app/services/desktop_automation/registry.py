@@ -90,7 +90,7 @@ class AutomationRegistry:
                     tenant_id=tenant,
                     name="automation_registry",
                     display_name="桌面自动化管理",
-                    description="编写和管理桌面自动化：先 sdk/observe/get，创建或修改 Python/RPA 草稿，test 后按明确错误修复，成功才能 publish。bind 将固定版本 Tool 分配给业务 Agent。只能操作当前任务发起人有权限的流程和 Agent。",
+                    description="编写和管理桌面自动化：先 sdk/observe/get，提交 Python/RPA 草稿并 test。publish 仅返回待用户确认，不创建版本；用户在聊天点击确认发布后才生成 Tool。bind 分配已经发布的固定版本。仅操作当前任务发起人有权限的流程和 Agent。",
                     type="mcp",
                     category="custom",
                     parameters_schema=registry_schema(),
@@ -108,6 +108,9 @@ class AutomationRegistry:
         else:
             tool.enabled = True
             tool.parameters_schema = registry_schema()
+        tool = await db.get(Tool, self.tool_id)
+        if tool is not None:
+            tool.description = "编写和管理桌面自动化：先 sdk/observe/get，提交 Python/RPA 草稿并 test。publish 仅返回待用户确认，不创建版本；用户在聊天点击确认发布后才生成 Tool。bind 分配已经发布的固定版本。仅操作当前任务发起人有权限的流程和 Agent。"
         await db.flush()
         return await self.status(db, user)
 
@@ -230,7 +233,7 @@ class AutomationRegistry:
             value = await s.edit(db, user, args.workflow_id, args.revision, args.script, args.name, args.description)
             return {"workflow_id": value["id"], "revision": value["revision"], "next": "test this revision"}
         if op == "publish":
-            return await s.publish(db, user, args.workflow_id, args.revision, args.note)
+            return await s.publication_ready(db, user, args.workflow_id, args.revision)
         if op == "bind":
             if args.version_id is None or args.agent_id is None:
                 fail(422, "bind requires version_id and agent_id")

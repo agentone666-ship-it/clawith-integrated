@@ -44,6 +44,7 @@ class Revision(BaseModel):
 
 
 class Publish(Revision):
+    expected_digest: str = Field(default="", max_length=64, pattern=r"^(?:[a-f0-9]{64})?$")
     note: str = Field(default="", max_length=500)
 
 
@@ -178,7 +179,7 @@ async def evidence(req: Request, ident: uuid.UUID, user: CurrentUser, db: DBSess
 
 @router.post("/{ident}/versions")
 async def publish(req: Request, ident: uuid.UUID, body: Publish, user: CurrentUser, db: DBSession):
-    return await capability(req).publish(db, user, ident, body.revision, body.note)
+    return await capability(req).publish(db, user, ident, body.revision, body.note, body.expected_digest)
 
 
 @router.get("/{ident}/versions/{version_id}")

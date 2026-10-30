@@ -85,3 +85,8 @@ Direct Computer Use uses the current session/Run's private cached frame and
 capture time in AgentRunMonitor, with the same viewport DesktopViewer as fixed
 scripts. Polling observers never call a desktop Tool or acquire a session. Keep
 terminal last-frame state distinct from ongoing execution and business success.
+
+After Agent authoring/testing, show a concise Confirm publication action. Publish
+that displayed trial digest and navigate in the SPA to the same workflow's
+versions tab. Workflow diagnostics and employee Tool links stay in the current
+page; do not use target=_blank. Preserve the originating chat in browser history.

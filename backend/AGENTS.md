@@ -216,3 +216,8 @@ belong to `desktop_automation/computer.py`. Validate genuine active Runtime
 identity, Tool assignment and origin user before forwarding; keep private
 read-only observers outside desktop leases. Register the literal computer MCP
 route before the published-version UUID route. See the owning automation note.
+
+Automation management publish returns verified-draft readiness only. Creating
+an immutable version requires the authenticated user's publication action.
+A chat confirmation carries the displayed trial digest; the workflow owner
+checks digest/revision and avoids duplicate versions on repeated confirmation.

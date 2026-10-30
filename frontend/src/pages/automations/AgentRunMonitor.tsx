@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { PublicationConfirm } from "./PublicationConfirm";
 import type { AgentDesktopActivity } from "./contracts";
 import { automationApi } from "./api";
 import { ComputerPreview } from "./ComputerPreview";
@@ -62,13 +64,12 @@ export function AgentRunMonitor({
       ) : (
         <>
           <RunPlayback key={run.id} run={run} />
-          <a
-            href={`/automations?workflow=${run.workflow_id}`}
-            target="_blank"
-            rel="noreferrer"
-          >
+          {!activity.lane_held && run.status === "succeeded" && (
+            <PublicationConfirm key={run.id} run={run} />
+          )}
+          <Link to={`/automations?workflow=${run.workflow_id}&tab=runs`}>
             查看流程与诊断
-          </a>
+          </Link>
         </>
       )}
     </section>

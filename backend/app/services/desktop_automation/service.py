@@ -198,11 +198,15 @@ class AutomationService:
     def tool_token(self, tenant: uuid.UUID, version_id: uuid.UUID) -> str:
         return hmac.new(self.config.signing_key.encode(), f"{tenant}:{version_id}".encode(), hashlib.sha256).hexdigest()
 
-    async def publish(self, db: AsyncSession, user: User, ident: uuid.UUID, revision: int, note: str) -> dict:
+    async def _publication(
+        self, db: AsyncSession, user: User, ident: uuid.UUID, revision: int, expected_digest: str = ""
+    ) -> tuple[Workflow, ManagedScript, Playback]:
         w = await self.workflow(db, user, ident, lock=True)
         if w.revision != revision:
             fail(409, "Draft changed; validate and publish the current draft")
         script = load_script(w.draft)
+        if expected_digest and script.digest() != expected_digest:
+            fail(409, "代码已变更，请重新试运行后确认发布")
         if isinstance(script, Script) and (
             not script.steps or not any(s.action == "assert_text" for s in script.steps)
         ):
@@ -225,6 +229,43 @@ class AutomationService:
             fail(409, "This exact draft must pass a test before publication")
         if isinstance(script, PythonScript) and not proof.result.get("compiler_fingerprint"):
             fail(409, "Python draft requires a successful isolated test")
+        return w, script, proof
+
+    async def publication_ready(self, db: AsyncSession, user: User, ident: uuid.UUID, revision: int) -> dict:
+        w, script, proof = await self._publication(db, user, ident, revision)
+        return {
+            "status": "awaiting_user_confirmation",
+            "workflow_id": str(w.id),
+            "revision": w.revision,
+            "digest": script.digest(),
+            "validation_run_id": str(proof.id),
+            "next": "脚本已保存并验证，请用户点击聊天中的‘确认发布’。Agent 不代替用户发布。",
+        }
+
+    async def publish(
+        self, db: AsyncSession, user: User, ident: uuid.UUID, revision: int, note: str, expected_digest: str = ""
+    ) -> dict:
+        w, script, proof = await self._publication(db, user, ident, revision, expected_digest)
+        if expected_digest:
+            previous = (
+                await db.execute(
+                    select(Version)
+                    .where(
+                        Version.workflow_id == ident,
+                        Version.tenant_id == w.tenant_id,
+                        Version.digest == expected_digest,
+                    )
+                    .order_by(Version.number.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if previous:
+                return {
+                    "version_id": str(previous.id),
+                    "number": previous.number,
+                    "tool_id": str(previous.tool_id),
+                    "validation_run_id": str(previous.validation_run_id),
+                }
         num = (await db.execute(select(func.max(Version.number)).where(Version.workflow_id == ident))).scalar_one() or 0
         if num >= 100:
             fail(409, "This workflow reached its 100-version limit")

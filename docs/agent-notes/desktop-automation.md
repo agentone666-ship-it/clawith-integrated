@@ -738,3 +738,51 @@ Verification:60 focused automation tests passed, then8 direct-tool tests passed
 after origin-user validation was added. Ruff, targeted Pyright, ESLint and both
 source/conservative deployment frontend production builds passed. The main
 Runtime container was unchanged; only the capability and frontend assets changed.
+
+### Human publication confirmation and same-page handoff (2026-10-29)
+
+Agent authoring ends with a saved, successfully tested draft. The management
+Tool's publish operation validates readiness and returns
+awaiting_user_confirmation; it never creates a Version or Tool. This boundary
+is enforced by the registry operation, not just authoring prompt wording.
+The chat's latest successful trial offers Confirm publication, scoped to that
+trial's digest. The authenticated user publication endpoint checks both the
+revision and expected digest under the workflow lock and reuses an existing
+same-digest version for repeated confirmations. Manual version management
+retains explicit human publication. No additional publication state machine or
+persisted pending flag is introduced: eligibility is derived from existing
+exact-source successful trials and immutable versions.
+
+Clicking confirmation publishes and navigates with the SPA router to the same
+workflow's versions tab. View workflow/diagnostics routes to its runs tab in
+that same page. Employee allocation links also stay in the SPA. Preserve the
+chat session in browser history; do not open a new browser tab/window for
+these internal actions. The authoring spec and model-visible readiness receipt
+must say saved/tested/pending confirmation, never published before user action.
+
+The revised tutorial must show the actual user entry, Markdown attachment,
+business request, model-authored source submission, live execution, user
+confirmation and same-page version view. Exclude development logs, prompt
+tuning and failed recording attempts from the usage tutorial. Preserve those
+attempts separately as evidence; do not represent manual source insertion or
+a prebuilt workflow as fresh model-authored delivery.
+
+Acceptance for this interaction used a fresh real MiniMax-M3 authoring Run
+20f215cd-f00e-41c5-a8af-61f868b184ab. The Agent created the Python workflow
+761848fd-a000-4b9e-bcc2-6a09be6bcec6, verified budget rejection before desktop
+input, and passed a22-step real purchase trial with independent field/unique
+record readback (PR-0203-027,2110 units,245702.90). Before the recorded user
+click there were no published versions. Confirm publication created v1
+583ca636-9e25-4969-a472-a92a88c4f3c9 and navigated to ?tab=versions with exactly
+one browser page. Fresh API readback and hashes verified the submitted, stored
+and published source match. A separate read-only actual-browser check clicked
+View workflow/diagnostics into ?tab=runs and returned to the originating chat
+with browser Back, still exactly one page and no page errors. The teaching
+video crops irrelevant technical context and omits failed recording attempts;
+its source footage and audits remain separately retained.
+
+Verification:53 focused publication/registry/executor/trace tests passed;23
+publication/registry tests passed after the final typed helper/description
+update. Ruff, scoped Pyright, ESLint and production builds passed. The capability
+and conservative frontend assets were deployed; the primary Runtime was not
+restarted. Previous already-published versions remain unchanged.

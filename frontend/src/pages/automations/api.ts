@@ -103,10 +103,10 @@ export const automationApi = {
       base + "/runs/" + id + "/evidence",
     ),
   cancel: (id: string) => post<Run>("/runs/" + id + "/cancel"),
-  publish: (w: Workflow, note: string) =>
+  publish: (w: Workflow, note: string, expectedDigest = "") =>
     post<{ number: number; version_id: string; tool_id: string }>(
       "/" + w.id + "/versions",
-      { revision: w.revision, note },
+      { revision: w.revision, note, expected_digest: expectedDigest },
     ),
   version: (id: string, version: string) =>
     request<Version>(base + "/" + id + "/versions/" + version),
