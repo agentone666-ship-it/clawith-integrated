@@ -51,8 +51,8 @@ export function RecordingPanel({
   useEffect(() => {
     current.current = recording;
   }, [recording]);
-  const refresh = useCallback(async () => {
-    if (!current.current || dispatching.current) return;
+  const refresh = useCallback(async (afterInput = false) => {
+    if (!current.current || (dispatching.current && !afterInput)) return;
     try {
       const f = await automationApi.frame(current.current.id);
       setFrame(f);
@@ -85,9 +85,14 @@ export function RecordingPanel({
   const send = useCallback(
     async (step: Step, param = "", isSecret = false) => {
       const r = current.current;
-      if (!r || dispatching.current) return;
+      if (!r) return;
+      if (dispatching.current) {
+        setNotice("上一项操作仍在执行，请等待画面更新后继续。");
+        return;
+      }
       dispatching.current = true;
       setBusy(true);
+      setNotice("正在执行操作…");
       try {
         const result = await automationApi.action(
           r.id,
@@ -98,13 +103,17 @@ export function RecordingPanel({
         );
         current.current = result.recording;
         onRecording(result.recording);
-        setNotice(result.detail);
+        if (result.status === "failed" || result.status === "unknown") {
+          onError(result.detail);
+        }
+        setNotice(result.detail + " · 正在更新画面…");
       } catch (error) {
         onError(error instanceof Error ? error.message : "桌面操作失败");
       } finally {
+        await refresh(true);
         dispatching.current = false;
         setBusy(false);
-        await refresh();
+        setNotice((value) => value.replace(" · 正在更新画面…", ""));
       }
     },
     [onRecording, onError, refresh],
@@ -253,7 +262,6 @@ export function RecordingPanel({
         onKeyDown={(e) => {
           if (
             !recording ||
-            busy ||
             ["Control", "Shift", "Alt", "Meta"].includes(e.key)
           )
             return;
@@ -276,6 +284,14 @@ export function RecordingPanel({
           e.preventDefault();
           const value = e.clipboardData.getData("text");
           if (value) void send(newStep("type_text", { text: value }));
+        }}
+        onWheel={(e) => {
+          if (!recording || Math.abs(e.deltaY) < 1) return;
+          e.currentTarget.focus({ preventScroll: true });
+          void send(newStep("scroll", {
+            direction: e.deltaY > 0 ? "down" : "up",
+            amount: 3,
+          }));
         }}
       >
         {frame ? (

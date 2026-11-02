@@ -579,7 +579,12 @@ class AutomationService:
             status, detail = "recorded", "操作已记录" if not r.paused else "操作已执行，录制已暂停"
             try:
                 await self.driver.execute(
-                    "record_" + r.id.hex, anchored, values, request_id, self.applications_for("record_" + r.id.hex)
+                    "record_" + r.id.hex,
+                    anchored if step.action == "assert_text" else step,
+                    values,
+                    request_id,
+                    self.applications_for("record_" + r.id.hex),
+                    literal=step.action != "assert_text",
                 )
             except DriverFailure as exc:
                 status, detail = ("unknown" if exc.uncertain else "failed"), str(exc)

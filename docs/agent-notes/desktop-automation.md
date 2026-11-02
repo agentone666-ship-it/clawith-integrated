@@ -958,3 +958,31 @@ scoped Python static checks passed. Installer tests cover owned stopped domains,
 foreign/active rejection, idempotence and restoring configuration after a failed
 driver restart. Recorded deployment receipts and private screenshots live in
 the task-specific server handoff directory, not the Runtime or user memory.
+
+
+### Recorder usability incident, 2026-11-01
+
+Live console capture showed a missing taskbar on both active test desktops.
+Application logs on the recording desktop showed repeated ShellHost.exe crashes
+(ucrtbase.dll,0xc0000409). Edge exists on disk; downloading from the Chrome
+website timed out while microsoft.com returned200. A screenshot alone does not
+establish a healthy Windows shell. Repair experiments run only on an idle
+desktop; never restart Explorer, log off or reboot a desktop with an active
+recording or unsaved user applications.
+
+The screenshot driver took up to5.594s in the observed recording tail. Previously
+manual input was anchored, then replayed immediately through window lookup and
+window screenshot/UIA, before another full refresh. Live recording now dispatches
+the user's observed desktop coordinates directly, while retaining the anchored
+step only in the reusable script. Fixed playback retains its window resolution
+and geometry checks. Parameter text is dispatched literally, while the persisted
+script still stores parameter references and omits secret values. Durable
+single-dispatch receipts, pause-on-uncertain and no-auto-replay remain required.
+
+The recorder keeps its input guard through the following frame refresh, displays
+pending input/refresh state, and explains attempts made while occupied. Provider
+failed/unknown receipts surface as errors. Vertical wheel input is forwarded to
+the desktop. This remains a request/screenshot recorder, not a remote-desktop
+stream; do not claim RDP-like latency or universal frame-rate improvement without
+live measurements. Applying the backend change must wait for existing recordings
+and in-flight inputs to finish; tests/build alone are not deployment acceptance.

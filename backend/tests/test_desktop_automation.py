@@ -511,3 +511,32 @@ async def test_probe_assertion_is_rejected_before_desktop_input(fixture):
             await play.start(db, USER, w.id, {}, "reject-debug-stop")
         assert error.value.status_code == 422
     assert not service.driver.inputs and not service.driver.owners
+
+
+async def test_live_recording_dispatches_observed_pixels_and_stores_window_anchor(fixture, monkeypatch):
+    service, _, sessions = fixture
+    sent = []
+
+    async def anchor(session, step):
+        return step.model_copy(update={"target": TARGET, "x": 15, "y": 20})
+
+    async def execute(session, step, inputs, request_id, applications, **kwargs):
+        sent.append((step, kwargs))
+        return {}
+
+    monkeypatch.setattr(service.driver, "anchor", anchor)
+    monkeypatch.setattr(service.driver, "execute", execute)
+    async with sessions() as db:
+        w = await workflow(service, db)
+        r = await service.start_recording(db, USER, w.id, 0)
+        step = Step(id="observed-click", action="click", x=315, y=220)
+        result = await service.record_action(db, USER, uuid.UUID(r["id"]), "direct_pixels_request", step, "", "")
+        assert result["status"] == "recorded"
+        assert sent[0][0].target is None and sent[0][0].x == 315 and sent[0][0].y == 220
+        assert sent[0][1]["literal"] is True
+        stored = await db.get(Recording, uuid.UUID(r["id"]))
+        assert stored.script["steps"][0]["target"] == TARGET.model_dump()
+        assert stored.script["steps"][0]["x"] == 15
+        # Unknown input is covered separately: this route still owns a single durable dispatch receipt.
+        await service.record_action(db, USER, uuid.UUID(r["id"]), "direct_pixels_request", step, "", "")
+        assert len(sent) == 1
