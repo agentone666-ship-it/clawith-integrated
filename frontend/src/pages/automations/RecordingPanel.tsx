@@ -2,15 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { automationApi } from "./api";
 import { useRecordingFullscreen } from "./useRecordingFullscreen";
 import "./recording-fullscreen.css";
+import { DesktopSurface } from "./DesktopSurface";
+import { DesktopInputQueue } from "./DesktopInputQueue";
 import { actionLabels, newStep } from "./contracts";
-import type {
-  ActionName,
-  Frame,
-  Recording,
-  Step,
-  Target,
-  Workflow,
-} from "./contracts";
+import type { Frame, Recording, Step, Target, Workflow } from "./contracts";
 
 interface Props {
   workflow: Workflow;
@@ -19,19 +14,6 @@ interface Props {
   onSaved: () => Promise<void>;
   onError: (message: string) => void;
 }
-const keyMap: Record<string, string> = {
-  Enter: "return",
-  Escape: "escape",
-  ArrowDown: "down",
-  ArrowUp: "up",
-  ArrowLeft: "left",
-  ArrowRight: "right",
-  " ": "space",
-  Backspace: "backspace",
-  Delete: "delete",
-  Tab: "tab",
-};
-
 export function RecordingPanel({
   workflow,
   recording,
@@ -46,30 +28,43 @@ export function RecordingPanel({
     leave: leaveFullscreen,
   } = useRecordingFullscreen();
   const [frame, setFrame] = useState<Frame | null>(null);
-  const [mode, setMode] = useState<ActionName>("click");
-  const [busy, setBusy] = useState(false);
-  const [showFullscreenInput, setShowFullscreenInput] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
+  const [inputBusy, setInputBusy] = useState(false);
+  const busy = transitioning || inputBusy;
+  const transition = useRef(false);
+  const mounted = useRef(true);
   const dispatching = useRef(false);
-  const [text, setText] = useState("");
-  const [parameter, setParameter] = useState("");
-  const [secret, setSecret] = useState(false);
   const [expected, setExpected] = useState("");
   const [targetKey, setTargetKey] = useState("");
   const [notice, setNotice] = useState("");
   const [frameError, setFrameError] = useState("");
+  const connectionError = useRef("");
+  const [inputReset, setInputReset] = useState(0);
+  const [inputInterrupted, setInputInterrupted] = useState(false);
   const current = useRef(recording);
   useEffect(() => {
     current.current = recording;
   }, [recording]);
   const refresh = useCallback(
     async (afterInput = false) => {
-      if (!current.current || (dispatching.current && !afterInput)) return;
+      const id = current.current?.id;
+      if (!id || (dispatching.current && !afterInput)) return;
       try {
-        const f = await automationApi.frame(current.current.id);
+        const f = await automationApi.frame(id);
+        if (
+          !mounted.current ||
+          current.current?.id !== id ||
+          (dispatching.current && !afterInput)
+        )
+          return;
         setFrame(f);
+        connectionError.current = "";
         setFrameError("");
       } catch (error) {
+        if (!mounted.current || current.current?.id !== id) return;
         const message = error instanceof Error ? error.message : "无法获取桌面";
+        connectionError.current = message;
+        setInputReset((value) => value + 1);
         setFrameError(message);
         onError(message);
         if (message.includes("Recording is no longer active")) {
@@ -97,52 +92,85 @@ export function RecordingPanel({
       clearTimeout(timer);
     };
   }, [recordingId, refresh]);
-  const send = useCallback(
-    async (step: Step, param = "", isSecret = false) => {
+  const execute = useCallback(
+    async (step: Step) => {
       const r = current.current;
-      if (!r) return;
-      if (frameError) {
-        setNotice("画面尚未恢复，暂不发送操作；连接恢复后请核对画面再继续。");
-        return;
-      }
-      if (dispatching.current) {
-        setNotice("上一项操作仍在执行，请等待画面更新后继续。");
-        return;
+      if (!r || !mounted.current) return false;
+      if (connectionError.current) {
+        setNotice("画面尚未恢复，暂不发送操作；请核对画面再继续。");
+        return false;
       }
       dispatching.current = true;
-      setBusy(true);
-      setNotice("正在执行操作…");
+      let accepted = false;
       try {
-        const result = await automationApi.action(
-          r.id,
-          step,
-          param,
-          param,
-          isSecret,
-        );
+        const result = await automationApi.action(r.id, step);
+        if (!mounted.current || current.current?.id !== r.id) return false;
         current.current = result.recording;
         onRecording(result.recording);
+        accepted = result.status === "recorded";
+        if (
+          accepted &&
+          step.action === "assert_text" &&
+          !result.recording.paused
+        )
+          setInputInterrupted(false);
         const detail =
           result.status === "unknown"
-            ? "这次操作需要确认，录制已暂停。请核对下方画面后继续，避免重复点击。"
+            ? "操作结果需要确认，后续输入未发送。请核对画面再继续。"
             : result.detail;
-        if (result.status === "failed" || result.status === "unknown") {
+        if (!accepted) {
+          setInputInterrupted(true);
+          setInputReset((value) => value + 1);
           onError(detail);
         }
-        setNotice(detail + " · 正在更新画面…");
+        setNotice(detail);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "桌面操作失败";
-        onError(message);
-        setNotice(message);
+        if (mounted.current && current.current?.id === r.id) {
+          const message =
+            error instanceof Error ? error.message : "桌面操作失败";
+          setInputInterrupted(true);
+          setInputReset((value) => value + 1);
+          onError(message);
+          setNotice(message + "；后续输入未发送，请核对画面。");
+        }
       } finally {
-        await refresh(true);
+        if (mounted.current && current.current?.id === r.id)
+          await refresh(true);
         dispatching.current = false;
-        setBusy(false);
-        setNotice((value) => value.replace(" · 正在更新画面…", ""));
       }
+      return accepted;
     },
-    [onRecording, onError, refresh, frameError],
+    [onRecording, onError, refresh],
   );
+  const executeRef = useRef(execute);
+  useEffect(() => {
+    executeRef.current = execute;
+  }, [execute]);
+  const queue = useRef<DesktopInputQueue | null>(null);
+  useEffect(() => {
+    const owner = new DesktopInputQueue(
+      (step) => executeRef.current(step),
+      (value) => {
+        if (mounted.current) setInputBusy(value);
+      },
+      (message) => {
+        if (mounted.current) setNotice(message);
+      },
+    );
+    queue.current = owner;
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      owner.clear();
+      queue.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    queue.current?.clear();
+  }, [recordingId]);
+  const send = useCallback((step: Step) => {
+    if (!transition.current) queue.current?.enqueue(step);
+  }, []);
   const selectedWindow =
     frame?.windows.find((w) => `${w.app_name}|${w.title}` === targetKey) ||
     [...(frame?.windows || [])].sort((a, b) => b.z_index - a.z_index)[0];
@@ -156,23 +184,28 @@ export function RecordingPanel({
       !window.confirm("重新录制会替换当前草稿，已发布的版本会保留。继续吗？")
     )
       return;
-    setBusy(true);
+    transition.current = true;
+    setTransitioning(true);
     setFrame(null);
     try {
       const r = await automationApi.record(workflow);
       current.current = r;
       onRecording(r);
-      setNotice("录制已开始，请在下方独立桌面操作。");
+      setInputInterrupted(false);
+      setNotice("录制已开始，点击云电脑画面即可操作。");
     } catch (error) {
       onError(error instanceof Error ? error.message : "无法开始录制");
     } finally {
-      setBusy(false);
+      transition.current = false;
+      setTransitioning(false);
     }
   };
   const handleStop = async () => {
-    if (!recording || dispatching.current) return;
-    setBusy(true);
+    if (!recording || transition.current) return;
+    transition.current = true;
+    setTransitioning(true);
     try {
+      await queue.current?.settled();
       await automationApi.stop(recording.id);
       current.current = null;
       onRecording(null);
@@ -181,29 +214,53 @@ export function RecordingPanel({
     } catch (error) {
       onError(error instanceof Error ? error.message : "停止录制失败");
     } finally {
-      setBusy(false);
+      transition.current = false;
+      setTransitioning(false);
     }
   };
   const handlePause = async () => {
-    if (!recording) return;
+    if (!current.current || transition.current) return;
+    transition.current = true;
+    setTransitioning(true);
     try {
-      const r = await automationApi.pause(recording);
-      current.current = r;
-      onRecording(r);
+      await queue.current?.settled();
+      if (!current.current) return;
+      if (inputInterrupted) {
+        const latest = await automationApi.detail(workflow.id);
+        const active = latest.recording;
+        if (!active) {
+          current.current = null;
+          onRecording(null);
+          await onSaved();
+          return;
+        }
+        const r = active.paused ? await automationApi.pause(active) : active;
+        current.current = r;
+        onRecording(r);
+        await refresh();
+        if (!connectionError.current) setInputInterrupted(false);
+      } else {
+        const r = await automationApi.pause(current.current);
+        current.current = r;
+        onRecording(r);
+      }
     } catch (error) {
       onError(error instanceof Error ? error.message : "无法切换录制状态");
+    } finally {
+      transition.current = false;
+      setTransitioning(false);
     }
   };
   return (
     <section
       ref={panelRef}
-      className={
-        "auto-recording" +
-        (expanded ? " is-fullscreen" : "") +
-        (showFullscreenInput ? " show-fullscreen-input" : "")
-      }
+      className={"auto-recording" + (expanded ? " is-fullscreen" : "")}
       onKeyDownCapture={(event) => {
-        if (expanded && event.key === "Escape") {
+        if (
+          expanded &&
+          event.key === "Escape" &&
+          !(event.target as HTMLElement).closest(".auto-direct-desktop")
+        ) {
           event.preventDefault();
           event.stopPropagation();
           void leaveFullscreen();
@@ -217,36 +274,6 @@ export function RecordingPanel({
         >
           {expanded ? "退出全屏" : "全屏"}
         </button>
-        {expanded && recording && (
-          <button
-            className="btn btn-secondary"
-            disabled={busy}
-            title="打开 Windows 运行窗口（Win+R）"
-            onClick={() =>
-              void send(newStep("hotkey", { key: "r", modifiers: ["win"] }))
-            }
-          >
-            运行
-          </button>
-        )}
-        {expanded && recording && (
-          <button
-            className="btn btn-secondary"
-            aria-expanded={showFullscreenInput}
-            onClick={() => setShowFullscreenInput((shown) => !shown)}
-          >
-            {showFullscreenInput ? "收起输入" : "输入文字"}
-          </button>
-        )}
-        {expanded && recording && (
-          <button
-            className="btn btn-secondary"
-            disabled={busy}
-            onClick={() => void send(newStep("press_key", { key: "escape" }))}
-          >
-            发送 Esc
-          </button>
-        )}
         {!recording ? (
           <button
             className="btn btn-primary"
@@ -259,7 +286,7 @@ export function RecordingPanel({
               : []
             ).length
               ? "重新录制"
-              : "开始录制桌面流程"}
+              : "开始录制"}
           </button>
         ) : (
           <>
@@ -274,57 +301,26 @@ export function RecordingPanel({
             <button
               className="btn btn-secondary"
               onClick={() => void handlePause()}
-              disabled={busy}
+              disabled={transitioning}
             >
-              {recording.paused ? "核对桌面后继续录制" : "暂停记录"}
+              {inputInterrupted
+                ? "核对后继续"
+                : recording.paused
+                  ? "继续录制"
+                  : "暂停录制"}
             </button>
             <button
               className="btn btn-primary"
               onClick={() => void handleStop()}
-              disabled={busy}
+              disabled={transitioning}
             >
-              停止并保存草稿
+              停止并保存
             </button>
-          </>
-        )}
-        {recording && (
-          <>
-            <select
-              aria-label="鼠标操作模式"
-              value={mode}
-              onChange={(e) => setMode(e.target.value as ActionName)}
-            >
-              <option value="click">单击</option>
-              <option value="double_click">双击</option>
-              <option value="right_click">右键</option>
-            </select>
-            <select
-              aria-label="打开桌面应用"
-              value=""
-              disabled={busy}
-              onChange={(e) => {
-                if (e.target.value)
-                  void send(
-                    newStep("launch_app", {
-                      app: e.target.value,
-                      label: "打开应用",
-                    }),
-                  );
-              }}
-            >
-              <option value="">打开应用…</option>
-              {workflow.applications.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
           </>
         )}
       </div>
       <p className="auto-hint">
-        这里是服务器独立 Windows
-        桌面。登录时可暂停记录；支持点击、快捷键、中文文本和结果验证。停止录制后请换数据试运行。
+        点击云电脑后直接使用鼠标和键盘，支持中文输入与粘贴。登录时可先暂停记录。
       </p>
       {notice && (
         <div className="auto-notice" role="status">
@@ -336,178 +332,28 @@ export function RecordingPanel({
           画面连接异常：{frameError}
         </div>
       )}
-      <div
-        className={"auto-desktop " + (busy ? "busy" : "")}
-        tabIndex={0}
-        aria-label="独立 Windows 桌面"
-        onKeyDown={(e) => {
-          if (!recording || ["Control", "Shift", "Alt", "Meta"].includes(e.key))
-            return;
-          e.preventDefault();
-          const modifiers: Step["modifiers"] = [];
-          if (e.ctrlKey || e.metaKey) modifiers.push("ctrl");
-          if (e.altKey) modifiers.push("alt");
-          if (e.shiftKey) modifiers.push("shift");
-          if (e.key.length === 1 && modifiers.length === 0)
-            void send(newStep("type_text", { text: e.key }));
-          else
-            void send(
-              newStep(modifiers.length ? "hotkey" : "press_key", {
-                key: keyMap[e.key] || e.key.toLowerCase(),
-                modifiers,
-              }),
-            );
-        }}
-        onPaste={(e) => {
-          e.preventDefault();
-          const value = e.clipboardData.getData("text");
-          if (value) void send(newStep("type_text", { text: value }));
-        }}
-        onWheel={(e) => {
-          if (!recording || Math.abs(e.deltaY) < 1) return;
-          e.currentTarget.focus({ preventScroll: true });
-          void send(
-            newStep("scroll", {
-              direction: e.deltaY > 0 ? "down" : "up",
-              amount: 3,
-            }),
-          );
-        }}
-      >
-        {frame ? (
-          <img
-            alt="Windows 桌面实时画面"
-            draggable={false}
-            src={`data:${frame.mime};base64,${frame.image}`}
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              e.currentTarget.parentElement?.focus({ preventScroll: true });
-              void send(
-                newStep(mode, {
-                  x: Math.floor(
-                    ((e.clientX - rect.left) * frame.width) / rect.width,
-                  ),
-                  y: Math.floor(
-                    ((e.clientY - rect.top) * frame.height) / rect.height,
-                  ),
-                }),
-              );
-            }}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              const rect = e.currentTarget.getBoundingClientRect();
-              void send(
-                newStep("right_click", {
-                  x: Math.floor(
-                    ((e.clientX - rect.left) * frame.width) / rect.width,
-                  ),
-                  y: Math.floor(
-                    ((e.clientY - rect.top) * frame.height) / rect.height,
-                  ),
-                }),
-              );
-            }}
-          />
-        ) : (
-          <div className="auto-desktop-empty">
-            <span>▣</span>
-            <strong>
-              {recording ? "正在连接独立桌面…" : "准备录制一个可复用的桌面流程"}
-            </strong>
-            <p>开始录制后，桌面画面将在这里显示。</p>
-          </div>
-        )}
-      </div>
+      {frame && recording ? (
+        <DesktopSurface
+          key={recording.id}
+          frame={frame}
+          busy={inputBusy}
+          blocked={!!frameError || transitioning || inputInterrupted}
+          resetToken={inputReset}
+          onInput={send}
+          onNotice={setNotice}
+        />
+      ) : (
+        <div className="auto-desktop auto-desktop-empty">
+          <span>▣</span>
+          <strong>
+            {recording ? "正在连接独立桌面…" : "准备录制一个可复用的桌面流程"}
+          </strong>
+          <p>开始录制后，桌面画面将在这里显示。</p>
+        </div>
+      )}
       {recording && (
-        <div className="auto-inputs">
-          <div className="auto-card">
-            <h3>输入文字</h3>
-            <textarea
-              aria-label="发送到桌面的文本"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="先点击桌面输入框，再输入或粘贴中文内容"
-            />
-            <div className="auto-row">
-              <input
-                aria-label="文本参数名"
-                value={parameter}
-                onChange={(e) => setParameter(e.target.value)}
-                placeholder="参数名，可选，如 order_id"
-              />
-              <label>
-                <input
-                  type="checkbox"
-                  checked={secret}
-                  onChange={(e) => setSecret(e.target.checked)}
-                />
-                敏感参数
-              </label>
-              <button
-                className="btn btn-secondary"
-                disabled={busy || !text || (secret && !parameter)}
-                onClick={() => {
-                  void send(
-                    newStep("type_text", {
-                      text,
-                      label: parameter ? `输入参数 ${parameter}` : "输入文本",
-                    }),
-                    parameter,
-                    secret,
-                  );
-                  setText("");
-                }}
-              >
-                发送文本
-              </button>
-            </div>
-            <div className="auto-row">
-              {["return", "tab", "escape", "backspace"].map((key) => (
-                <button
-                  className="btn auto-small"
-                  key={key}
-                  disabled={busy}
-                  onClick={() => void send(newStep("press_key", { key }))}
-                >
-                  {key}
-                </button>
-              ))}
-              <button
-                className="btn auto-small"
-                disabled={busy}
-                onClick={() =>
-                  void send(
-                    newStep("hotkey", { key: "a", modifiers: ["ctrl"] }),
-                  )
-                }
-              >
-                Ctrl+A
-              </button>
-              <button
-                className="btn auto-small"
-                disabled={busy}
-                onClick={() =>
-                  void send(
-                    newStep("hotkey", { key: "s", modifiers: ["ctrl"] }),
-                  )
-                }
-              >
-                Ctrl+S
-              </button>
-              {(["up", "down"] as const).map((direction) => (
-                <button
-                  className="btn auto-small"
-                  key={direction}
-                  disabled={busy}
-                  onClick={() =>
-                    void send(newStep("scroll", { direction, amount: 3 }))
-                  }
-                >
-                  {direction === "up" ? "向上滚动" : "向下滚动"}
-                </button>
-              ))}
-            </div>
-          </div>
+        <details className="auto-inputs auto-record-validation">
+          <summary>结果验证</summary>
           <div className="auto-card">
             <h3>记录成功条件</h3>
             <select
@@ -549,7 +395,7 @@ export function RecordingPanel({
               发布前至少有一个结果验证，避免只执行操作却没有完成业务。
             </p>
           </div>
-        </div>
+        </details>
       )}
       {recording && (
         <div className="auto-step-strip">

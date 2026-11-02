@@ -1,5 +1,4 @@
-.auto-recording.is-fullscreen,
-.auto-recording:fullscreen {
+.auto-recording.is-fullscreen {
   position: fixed;
   inset: 0;
   z-index: 10000;
@@ -44,22 +43,49 @@
   max-width: 100%;
   max-height: 100%;
 }
-.auto-recording.is-fullscreen.show-fullscreen-input > .auto-inputs {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  flex: 0 0 auto;
-  max-height: 30vh;
-  overflow: auto;
-  margin: 0;
-}
-.auto-recording.is-fullscreen.show-fullscreen-input
-  > .auto-inputs
-  > .auto-card:nth-child(2) {
-  display: none;
-}
 .auto-recording.is-fullscreen > .auto-error-banner {
   flex: 0 0 auto;
   max-height: 20vh;
   overflow: auto;
   margin: 0;
+}
+
+.auto-direct-desktop {
+  position: relative;
+  overscroll-behavior: contain;
+  touch-action: none;
+}
+.auto-direct-desktop:focus-within {
+  outline: 2px solid var(--accent-primary, #737373);
+  outline-offset: -2px;
+}
+.auto-direct-desktop img {
+  user-select: none;
+  cursor: default;
+}
+.auto-direct-desktop.busy {
+  pointer-events: auto;
+}
+.auto-desktop-keyboard {
+  position: absolute;
+  width: 2px;
+  height: 20px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  resize: none;
+  pointer-events: none;
+  font-size: 16px;
+}
+.auto-record-validation {
+  display: block;
+}
+.auto-record-validation > summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 8px 0;
+}
+.auto-record-validation:not([open]) > .auto-card {
+  display: none;
 }

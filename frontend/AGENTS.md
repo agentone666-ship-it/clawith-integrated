@@ -97,10 +97,12 @@ that displayed trial digest and navigate in the SPA to the same workflow's
 versions tab. Workflow diagnostics and employee Tool links stay in the current
 page; do not use target=_blank. Preserve the originating chat in browser history.
 
-The recording workspace supports same-page fullscreen and an in-page maximized
-fallback. Preserve the recording component across start/stop state updates,
-fit the entire desktop image, and map input using the rendered image rectangle.
-Keep pause/save/exit controls accessible. Escape exits fullscreen without being
-forwarded to Windows; the separate Send Esc control targets the guest. Expose
-text entry in fullscreen for IME input and keep native recordings independent
-from fullscreen UI lifecycle.
+The recording workspace uses same-page maximization so Escape can reach Windows
+while the desktop keyboard has focus; the exit button remains available. Keep
+only recording lifecycle and view controls in its toolbar. DesktopSurface owns
+click/double-click/right-click, browser text/IME/paste and keyboard capture;
+DesktopInputQueue owns a bounded, ordered queue of unsent manual input. Flush
+pending text before navigation keys or pointer actions, and drain accepted input
+before pause/save. Failed/uncertain writes clear later pending input without
+replay. Neither an observer nor a rerender may claim a desktop session. Maintain
+whole-image fitting, IME focus and coordinate mapping from the actual image.

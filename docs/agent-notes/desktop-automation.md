@@ -1055,13 +1055,9 @@ and personal applications. The controller remains a hidden scheduled task.
 Cold native-driver initialization has a bounded120s handshake; startup still
 admits no input until an authenticated capture is available.
 
-The recording pane has native browser fullscreen with an in-page maximized
-fallback, a toolbar for exit/pause/save/Send Esc, and optional text entry for IME.
-It scales the whole image and projects clicks from its actual rendered rectangle.
-Full-window mode does not allocate another desktop or open another browser tab.
-Escape exits the viewer and is not sent to the guest. A stable workflow key keeps
-fullscreen alive when recording starts; the first new frame is cleared while
-connecting so previous pixels cannot be mistaken for a new live image.
+The recording pane's current direct-input contract is documented below. The
+2026-11-01 verification below describes the earlier toolbar-driven interface;
+it does not verify the replacement direct-input interaction.
 
 Verification separates transport-mocked UI checks from real Windows execution.
 The UI test covered1440x900,900x600 and390x844 layouts, image aspect/viewport fit,
@@ -1094,3 +1090,54 @@ frontend TypeScript/lint/build passed. The active user's recording desktop and
 two other managed desktops passed protocol2 control-component checks. The fourth
 test desktop's lockscreen recovery is a separate maintenance boundary; do not
 count a copied component as a usable desktop before interactive readiness.
+
+### Direct desktop interaction, 2026-11-02
+
+The recording toolbar owns start/pause/continue/stop-save and same-page
+maximization only. Run, text-entry/send, Send Esc, mouse-mode, application-launch,
+scroll and shortcut helper controls are removed. Success-condition verification
+remains available in a collapsed section outside maximization.
+
+DesktopSurface owns browser input on the rendered desktop. Its invisible,
+focused textarea is positioned at the clicked field for browser IME candidate
+placement. Printable text is taken from input/composition events, not keydown;
+composition commits once, and short text bursts are combined before dispatch.
+Pointer clicks are disambiguated from browser double-click events; right-click
+and wheel input target Windows. Control keys flush prior text first. Browser
+paste supplies host text; copy/cut initiated in the guest keeps subsequent
+paste in the guest until host focus/copy changes. Mac editing Command shortcuts
+map to Control, other Command combinations to Windows. Browser/OS-reserved
+shortcuts remain subject to host browser restrictions.
+
+DesktopInputQueue owns only unsent operator input, bounded to64 pending actions
+and8000 UTF-16 text units. Requests remain serialized through the existing
+server recording owner and idempotency receipts. A failed/unknown dispatch drops
+later pending input; it never retries the earlier write. Queue lifetime follows
+the recording pane, and late frames/receipts cannot replace another recording.
+Pause/save drain accepted input, while leaving the view does not stop recording.
+A failed/uncertain write also resets unsent textarea/click buffers and fences new
+input until the operator explicitly continues after server-state reconciliation;
+a composition started before that reset cannot commit into the recovered session.
+Stale/disconnected frames reject new dispatch until observation recovers.
+
+Maximization is in-page, not the browser Fullscreen API: native fullscreen can
+consume Escape before the guest sees it, making the removed Send Esc control
+necessary. When the desktop has focus, Escape targets Windows; outside desktop
+focus Escape leaves maximization. The visible exit button always exits the view.
+This replaces the earlier Escape-isolation behavior intentionally.
+
+Verification for direct interaction: five queue behavior tests passed (ordering,
+text coalescing, bounds, interrupted writes and cleanup). Type checking, scoped
+ESLint, formatting and the production build passed. Browser transport tests
+cover1440x900,900x600 and390x844, natural double/right clicks, rapid typing, a
+single IME commit, host paste and guest clipboard shortcuts, Escape routing,
+Win+R, disconnect/recovery, draining text on save, and explicit recovery after
+unknown input. Those UI tests use synthetic frames and never control a VM.
+
+A separate real isolated Windows recording used the new surface to open a
+unique Notepad file with Win+R, change window bounds by double-click, open and
+close a context menu with Escape, type ASCII/Chinese/emoji, copy/paste in the
+guest, save with Ctrl+S, and stop/save18 recorded actions. Independent disk
+readback matched the complete duplicated text; no model participated in this
+infrastructure acceptance. Frontend deployment retains old assets and replaces
+the HTML index atomically; the Runtime/backend container was not restarted.
