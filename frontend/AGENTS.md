@@ -96,3 +96,11 @@ After Agent authoring/testing, show a concise Confirm publication action. Publis
 that displayed trial digest and navigate in the SPA to the same workflow's
 versions tab. Workflow diagnostics and employee Tool links stay in the current
 page; do not use target=_blank. Preserve the originating chat in browser history.
+
+The recording workspace supports same-page fullscreen and an in-page maximized
+fallback. Preserve the recording component across start/stop state updates,
+fit the entire desktop image, and map input using the rendered image rectangle.
+Keep pause/save/exit controls accessible. Escape exits fullscreen without being
+forwarded to Windows; the separate Send Esc control targets the guest. Expose
+text entry in fullscreen for IME input and keep native recordings independent
+from fullscreen UI lifecycle.

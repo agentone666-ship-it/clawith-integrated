@@ -138,6 +138,8 @@ class CuaDriver:
         return {
             "image": image["data"],
             "mime": image.get("mimeType", "image/png"),
+            "recording_input_available": meta.get("recording_input_backend") == "win32_send_input"
+            and meta.get("recording_protocol") == 2,
             "width": meta.get("screenshot_width", 1280),
             "height": meta.get("screenshot_height", 800),
         }
@@ -193,7 +195,37 @@ class CuaDriver:
         applications: dict[str, dict],
         *,
         literal: bool = False,
+        live: bool = False,
     ) -> dict:
+        if (
+            live
+            and self.sandbox
+            and session not in self.legacy_sessions
+            and step.action
+            in {
+                "click",
+                "double_click",
+                "right_click",
+                "type_text",
+                "press_key",
+                "hotkey",
+                "scroll",
+            }
+        ):
+            observed = await self.frame(session)
+            if not observed.get("recording_input_available"):
+                raise DriverFailure("Cloud desktop input component needs an update; no action was dispatched")
+            params = {
+                "_recording_input": True,
+                "x": step.x,
+                "y": step.y,
+                "text": step.text,
+                "key": step.key,
+                "modifiers": step.modifiers,
+                "direction": step.direction,
+                "amount": step.amount,
+            }
+            return await self.call(session, step.action, params, request_id)
         if step.action == "launch_app":
             app = applications.get(step.app)
             if not app:

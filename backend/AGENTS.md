@@ -229,3 +229,10 @@ and capability never receive libvirt/Docker sockets or guest credentials.
 In managed mode exclusion is per desktop, not global. Computer Use, recorded
 RPA and Python playback share this route. Idle reclamation saves VM state and
 releases compute, retaining account-owned disks. See the owning desktop note.
+
+Interactive recording uses the scoped guest broker's protocol2 SendInput/GDI
+path, with fresh HWND enumeration. Keep its physical-input selector restricted
+to authenticated manual recording labels; Agent Run input retains the Cua path.
+Validate complete input batches before submission and retain single-dispatch
+receipts and uncertain-result fencing. Do not substitute cached Cua pixels after
+external input. See the desktop automation note for scope and acceptance.

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { automationApi } from "./api";
+import { useRecordingFullscreen } from "./useRecordingFullscreen";
+import "./recording-fullscreen.css";
 import { actionLabels, newStep } from "./contracts";
 import type {
   ActionName,
@@ -37,9 +39,16 @@ export function RecordingPanel({
   onSaved,
   onError,
 }: Props) {
+  const {
+    panelRef,
+    expanded,
+    toggle: toggleFullscreen,
+    leave: leaveFullscreen,
+  } = useRecordingFullscreen();
   const [frame, setFrame] = useState<Frame | null>(null);
   const [mode, setMode] = useState<ActionName>("click");
   const [busy, setBusy] = useState(false);
+  const [showFullscreenInput, setShowFullscreenInput] = useState(false);
   const dispatching = useRef(false);
   const [text, setText] = useState("");
   const [parameter, setParameter] = useState("");
@@ -47,25 +56,31 @@ export function RecordingPanel({
   const [expected, setExpected] = useState("");
   const [targetKey, setTargetKey] = useState("");
   const [notice, setNotice] = useState("");
+  const [frameError, setFrameError] = useState("");
   const current = useRef(recording);
   useEffect(() => {
     current.current = recording;
   }, [recording]);
-  const refresh = useCallback(async (afterInput = false) => {
-    if (!current.current || (dispatching.current && !afterInput)) return;
-    try {
-      const f = await automationApi.frame(current.current.id);
-      setFrame(f);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "无法获取桌面";
-      onError(message);
-      if (message.includes("Recording is no longer active")) {
-        current.current = null;
-        onRecording(null);
-        await onSaved();
+  const refresh = useCallback(
+    async (afterInput = false) => {
+      if (!current.current || (dispatching.current && !afterInput)) return;
+      try {
+        const f = await automationApi.frame(current.current.id);
+        setFrame(f);
+        setFrameError("");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "无法获取桌面";
+        setFrameError(message);
+        onError(message);
+        if (message.includes("Recording is no longer active")) {
+          current.current = null;
+          onRecording(null);
+          await onSaved();
+        }
       }
-    }
-  }, [onError, onRecording, onSaved]);
+    },
+    [onError, onRecording, onSaved],
+  );
   const recordingId = recording?.id;
   useEffect(() => {
     if (!recordingId) return;
@@ -86,6 +101,10 @@ export function RecordingPanel({
     async (step: Step, param = "", isSecret = false) => {
       const r = current.current;
       if (!r) return;
+      if (frameError) {
+        setNotice("画面尚未恢复，暂不发送操作；连接恢复后请核对画面再继续。");
+        return;
+      }
       if (dispatching.current) {
         setNotice("上一项操作仍在执行，请等待画面更新后继续。");
         return;
@@ -103,15 +122,18 @@ export function RecordingPanel({
         );
         current.current = result.recording;
         onRecording(result.recording);
-        const detail = result.status === "unknown"
-          ? "这次操作需要确认，录制已暂停。请核对下方画面后继续，避免重复点击。"
-          : result.detail;
+        const detail =
+          result.status === "unknown"
+            ? "这次操作需要确认，录制已暂停。请核对下方画面后继续，避免重复点击。"
+            : result.detail;
         if (result.status === "failed" || result.status === "unknown") {
           onError(detail);
         }
         setNotice(detail + " · 正在更新画面…");
       } catch (error) {
-        onError(error instanceof Error ? error.message : "桌面操作失败");
+        const message = error instanceof Error ? error.message : "桌面操作失败";
+        onError(message);
+        setNotice(message);
       } finally {
         await refresh(true);
         dispatching.current = false;
@@ -119,7 +141,7 @@ export function RecordingPanel({
         setNotice((value) => value.replace(" · 正在更新画面…", ""));
       }
     },
-    [onRecording, onError, refresh],
+    [onRecording, onError, refresh, frameError],
   );
   const selectedWindow =
     frame?.windows.find((w) => `${w.app_name}|${w.title}` === targetKey) ||
@@ -135,6 +157,7 @@ export function RecordingPanel({
     )
       return;
     setBusy(true);
+    setFrame(null);
     try {
       const r = await automationApi.record(workflow);
       current.current = r;
@@ -172,8 +195,58 @@ export function RecordingPanel({
     }
   };
   return (
-    <section className="auto-recording">
+    <section
+      ref={panelRef}
+      className={
+        "auto-recording" +
+        (expanded ? " is-fullscreen" : "") +
+        (showFullscreenInput ? " show-fullscreen-input" : "")
+      }
+      onKeyDownCapture={(event) => {
+        if (expanded && event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          void leaveFullscreen();
+        }
+      }}
+    >
       <div className="auto-toolbar">
+        <button
+          className="btn btn-secondary"
+          onClick={() => void toggleFullscreen()}
+        >
+          {expanded ? "退出全屏" : "全屏"}
+        </button>
+        {expanded && recording && (
+          <button
+            className="btn btn-secondary"
+            disabled={busy}
+            title="打开 Windows 运行窗口（Win+R）"
+            onClick={() =>
+              void send(newStep("hotkey", { key: "r", modifiers: ["win"] }))
+            }
+          >
+            运行
+          </button>
+        )}
+        {expanded && recording && (
+          <button
+            className="btn btn-secondary"
+            aria-expanded={showFullscreenInput}
+            onClick={() => setShowFullscreenInput((shown) => !shown)}
+          >
+            {showFullscreenInput ? "收起输入" : "输入文字"}
+          </button>
+        )}
+        {expanded && recording && (
+          <button
+            className="btn btn-secondary"
+            disabled={busy}
+            onClick={() => void send(newStep("press_key", { key: "escape" }))}
+          >
+            发送 Esc
+          </button>
+        )}
         {!recording ? (
           <button
             className="btn btn-primary"
@@ -258,15 +331,17 @@ export function RecordingPanel({
           {notice}
         </div>
       )}
+      {frameError && (
+        <div className="auto-error-banner" role="alert">
+          画面连接异常：{frameError}
+        </div>
+      )}
       <div
         className={"auto-desktop " + (busy ? "busy" : "")}
         tabIndex={0}
         aria-label="独立 Windows 桌面"
         onKeyDown={(e) => {
-          if (
-            !recording ||
-            ["Control", "Shift", "Alt", "Meta"].includes(e.key)
-          )
+          if (!recording || ["Control", "Shift", "Alt", "Meta"].includes(e.key))
             return;
           e.preventDefault();
           const modifiers: Step["modifiers"] = [];
@@ -291,10 +366,12 @@ export function RecordingPanel({
         onWheel={(e) => {
           if (!recording || Math.abs(e.deltaY) < 1) return;
           e.currentTarget.focus({ preventScroll: true });
-          void send(newStep("scroll", {
-            direction: e.deltaY > 0 ? "down" : "up",
-            amount: 3,
-          }));
+          void send(
+            newStep("scroll", {
+              direction: e.deltaY > 0 ? "down" : "up",
+              amount: 3,
+            }),
+          );
         }}
       >
         {frame ? (

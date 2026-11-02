@@ -333,7 +333,7 @@ export function AutomationStudio() {
               )}
               {tab === "record" && script.format === "clawith.cua.v1" && (
                 <RecordingPanel
-                  key={workflow.recording?.id || "idle"}
+                  key={workflow.id}
                   workflow={workflow}
                   recording={workflow.recording}
                   onRecording={onRecording}

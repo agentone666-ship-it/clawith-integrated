@@ -34,6 +34,153 @@ def compact_schema(value):
     return value
 
 
+def recording_events(action, params, width, height):
+    """Validate an entire manual input batch before submitting any OS input."""
+    if action in {'click','double_click','right_click'}:
+        x,y=params.get('x'),params.get('y')
+        if not all(isinstance(v,(int,float)) and not isinstance(v,bool) for v in (x,y)) or not (0<=x<width and 0<=y<height):
+            raise ValueError('Invalid desktop coordinates; no action was dispatched')
+        button='right' if action=='right_click' else 'left'
+        return [('move',round(x*65535/max(1,width-1)),round(y*65535/max(1,height-1)))]+[(button,up) for _ in range(2 if action=='double_click' else 1) for up in (False,True)]
+    if action=='type_text':
+        value=params.get('text')
+        if not isinstance(value,str) or not value or len(value)>8000:
+            raise ValueError('Invalid text; no action was dispatched')
+        data=value.encode('utf-16-le')
+        return [('unicode',int.from_bytes(data[i:i+2],'little'),up) for i in range(0,len(data),2) for up in (False,True)]
+    if action in {'press_key','hotkey'}:
+        keys={'return':13,'enter':13,'tab':9,'escape':27,'esc':27,'backspace':8,'delete':46,'space':32,'left':37,'up':38,'right':39,'down':40,'home':36,'end':35,'pageup':33,'pagedown':34,'insert':45}
+        keys.update({chr(n):n for n in range(65,91)})
+        keys.update({str(n):ord(str(n)) for n in range(10)})
+        keys.update({'f'+str(n):111+n for n in range(1,13)})
+        key=params.get('key','');mods=params.get('modifiers',[])
+        lookup=key.upper() if isinstance(key,str) and len(key)==1 and key.isalpha() else key.lower() if isinstance(key,str) else ''
+        if lookup not in keys or not isinstance(mods,list) or len(mods)>4 or any(m not in {'ctrl','shift','alt','win'} for m in mods):
+            raise ValueError('Unsupported desktop key; no action was dispatched')
+        modifiers=[{'ctrl':17,'shift':16,'alt':18,'win':91}[m] for m in dict.fromkeys(mods)]
+        return [('key',m,False) for m in modifiers]+[('key',keys[lookup],False),('key',keys[lookup],True)]+[('key',m,True) for m in reversed(modifiers)]
+    if action=='scroll':
+        direction=params.get('direction');amount=params.get('amount',3)
+        if direction not in {'up','down','left','right'} or not isinstance(amount,int) or isinstance(amount,bool) or not 1<=amount<=20:
+            raise ValueError('Invalid scroll; no action was dispatched')
+        return [('wheel',amount*120*(1 if direction in {'up','right'} else -1),direction in {'left','right'})]
+    raise ValueError('Unsupported manual desktop action; no action was dispatched')
+
+
+def recording_input(action, params):
+    """Physical input in this user's isolated console; never activates a guessed HWND."""
+    import ctypes as c
+    from ctypes import wintypes as w
+    class Mouse(c.Structure):
+        _fields_=[('dx',w.LONG),('dy',w.LONG),('mouseData',w.DWORD),('dwFlags',w.DWORD),('time',w.DWORD),('dwExtraInfo',c.c_size_t)]
+    class Keyboard(c.Structure):
+        _fields_=[('wVk',w.WORD),('wScan',w.WORD),('dwFlags',w.DWORD),('time',w.DWORD),('dwExtraInfo',c.c_size_t)]
+    class Union(c.Union):
+        _fields_=[('mi',Mouse),('ki',Keyboard)]
+    class Input(c.Structure):
+        _anonymous_=('event',)
+        _fields_=[('type',w.DWORD),('event',Union)]
+    u=c.WinDLL('user32',use_last_error=True)
+    u.SendInput.argtypes=[w.UINT,c.POINTER(Input),c.c_int];u.SendInput.restype=w.UINT
+    u.SetThreadDpiAwarenessContext.argtypes=[c.c_void_p];u.SetThreadDpiAwarenessContext.restype=c.c_void_p
+    previous=u.SetThreadDpiAwarenessContext(c.c_void_p(-4))
+    try:
+        # The current provider owns one primary display. Refuse ambiguous geometry.
+        if u.GetSystemMetrics(76)!=0 or u.GetSystemMetrics(77)!=0 or u.GetSystemMetrics(80)!=1:
+            raise ValueError('Unsupported display origin; no action was dispatched')
+        plan=recording_events(action,params,u.GetSystemMetrics(78),u.GetSystemMetrics(79))
+        events=[]
+        for entry in plan:
+            e=Input()
+            if entry[0] in {'key','unicode'}:
+                e.type=1
+                scan=entry[1] if entry[0]=='unicode' else u.MapVirtualKeyW(entry[1],0)
+                flags=(4 if entry[0]=='unicode' else 8|(1 if entry[1] in {33,34,35,36,37,38,39,40,45,46,91} else 0))|(2 if entry[2] else 0)
+                e.ki=Keyboard(0,scan,flags,0,0)
+            else:
+                e.type=0
+                if entry[0]=='move':e.mi=Mouse(entry[1],entry[2],0,0x0001|0x8000|0x4000,0,0)
+                elif entry[0]=='wheel':e.mi=Mouse(0,0,entry[1]&0xffffffff,0x1000 if entry[2] else 0x0800,0,0)
+                else:e.mi=Mouse(0,0,0,({'left':(2,4),'right':(8,16)}[entry[0]])[int(entry[1])],0,0)
+            events.append(e)
+        array=(Input*len(events))(*events)
+        submitted=u.SendInput(len(events),array,c.sizeof(Input))
+        if submitted!=len(events):
+            raise RuntimeError('Unknown desktop input outcome; inspect the screen before continuing. No automatic replay.')
+        return {'content':[{'type':'text','text':'Desktop input submitted; inspect the updated screen.'}],'structuredContent':{'input_backend':'win32_send_input','submitted_events':submitted}}
+    finally:
+        if previous:u.SetThreadDpiAwarenessContext(previous)
+
+
+def recording_desktop():
+    """Capture fresh console pixels after physical input, outside Cua's state cache."""
+    import ctypes as c
+    from ctypes import wintypes as w
+    import struct,zlib
+    u=c.WinDLL('user32',use_last_error=True);g=c.WinDLL('gdi32',use_last_error=True)
+    u.GetDC.argtypes=[w.HWND];u.GetDC.restype=w.HDC
+    u.ReleaseDC.argtypes=[w.HWND,w.HDC]
+    g.CreateCompatibleDC.argtypes=[w.HDC];g.CreateCompatibleDC.restype=w.HDC
+    g.CreateDIBSection.argtypes=[w.HDC,c.c_void_p,w.UINT,c.POINTER(c.c_void_p),w.HANDLE,w.DWORD];g.CreateDIBSection.restype=w.HANDLE
+    g.SelectObject.argtypes=[w.HDC,w.HANDLE];g.SelectObject.restype=w.HANDLE
+    g.BitBlt.argtypes=[w.HDC,c.c_int,c.c_int,c.c_int,c.c_int,w.HDC,c.c_int,c.c_int,w.DWORD]
+    g.DeleteObject.argtypes=[w.HANDLE];g.DeleteDC.argtypes=[w.HDC]
+    u.SetThreadDpiAwarenessContext.argtypes=[c.c_void_p];u.SetThreadDpiAwarenessContext.restype=c.c_void_p
+    previous=u.SetThreadDpiAwarenessContext(c.c_void_p(-4));dc=None;memory=None;bitmap=None;old=None
+    try:
+        width,height=u.GetSystemMetrics(0),u.GetSystemMetrics(1)
+        if u.GetSystemMetrics(80)!=1 or not 1<=width*height<=16000000:raise RuntimeError('Unsupported recording display geometry')
+        header=struct.pack('<IiiHHIIiiII',40,width,-height,1,32,0,width*height*4,0,0,0,0)
+        info=c.create_string_buffer(header);bits=c.c_void_p();dc=u.GetDC(None);memory=g.CreateCompatibleDC(dc)
+        bitmap=g.CreateDIBSection(dc,info,0,c.byref(bits),None,0)
+        if not dc or not memory or not bitmap or not bits.value:raise RuntimeError('Desktop capture allocation failed')
+        old=g.SelectObject(memory,bitmap)
+        if not g.BitBlt(memory,0,0,width,height,dc,0,0,0x00CC0020|0x40000000):raise RuntimeError('Desktop capture failed')
+        raw=c.string_at(bits,width*height*4);rgb=bytearray(width*height*3)
+        rgb[0::3]=raw[2::4];rgb[1::3]=raw[1::4];rgb[2::3]=raw[0::4]
+        rows=b''.join(b'\x00'+rgb[i:i+width*3] for i in range(0,len(rgb),width*3))
+        def chunk(kind,data):return struct.pack('>I',len(data))+kind+data+struct.pack('>I',zlib.crc32(kind+data)&0xffffffff)
+        png=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',width,height,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(rows,3))+chunk(b'IEND',b'')
+        if len(png)>8*1024*1024:raise RuntimeError('Recording capture exceeds 8 MiB')
+        return {'content':[{'type':'image','data':base64.b64encode(png).decode(),'mimeType':'image/png'}],'structuredContent':{'screenshot_width':width,'screenshot_height':height,'recording_input_backend':'win32_send_input'}}
+    finally:
+        if old and memory:g.SelectObject(memory,old)
+        if bitmap:g.DeleteObject(bitmap)
+        if memory:g.DeleteDC(memory)
+        if dc:u.ReleaseDC(None,dc)
+        if previous:u.SetThreadDpiAwarenessContext(previous)
+
+
+def recording_windows():
+    """Enumerate current HWNDs after input; do not reuse cached accessibility snapshots."""
+    import ctypes as c
+    from ctypes import wintypes as w
+    u=c.WinDLL('user32',use_last_error=True);k=c.WinDLL('kernel32',use_last_error=True)
+    callback=c.WINFUNCTYPE(w.BOOL,w.HWND,w.LPARAM)
+    u.EnumWindows.argtypes=[callback,w.LPARAM];u.GetWindowTextW.argtypes=[w.HWND,w.LPWSTR,c.c_int]
+    u.GetWindowRect.argtypes=[w.HWND,c.POINTER(w.RECT)];u.GetWindowThreadProcessId.argtypes=[w.HWND,c.POINTER(w.DWORD)]
+    u.IsWindowVisible.argtypes=[w.HWND];u.IsIconic.argtypes=[w.HWND]
+    k.OpenProcess.argtypes=[w.DWORD,w.BOOL,w.DWORD];k.OpenProcess.restype=w.HANDLE
+    k.QueryFullProcessImageNameW.argtypes=[w.HANDLE,w.DWORD,w.LPWSTR,c.POINTER(w.DWORD)];k.CloseHandle.argtypes=[w.HANDLE]
+    values=[]
+    @callback
+    def visit(hwnd,unused):
+        if len(values)>=300:return False
+        if not u.IsWindowVisible(hwnd) or u.IsIconic(hwnd):return True
+        rect=w.RECT();pid=w.DWORD();title=c.create_unicode_buffer(1024)
+        if not u.GetWindowRect(hwnd,c.byref(rect)) or rect.right<=rect.left or rect.bottom<=rect.top:return True
+        u.GetWindowTextW(hwnd,title,len(title));u.GetWindowThreadProcessId(hwnd,c.byref(pid))
+        handle=k.OpenProcess(0x1000,False,pid.value);path=c.create_unicode_buffer(2048);size=w.DWORD(len(path));app=''
+        if handle:
+            try:
+                if k.QueryFullProcessImageNameW(handle,0,path,c.byref(size)):app=path.value.replace('\\','/').rsplit('/',1)[-1]
+            finally:k.CloseHandle(handle)
+        values.append({'window_id':int(hwnd),'pid':pid.value,'title':title.value,'app_name':app,'z_index':10000-len(values),'is_on_screen':True,'minimized':False,'bounds':{'x':rect.left,'y':rect.top,'width':rect.right-rect.left,'height':rect.bottom-rect.top}})
+        return True
+    u.EnumWindows(visit,0)
+    return {'content':[{'type':'text','text':json.dumps({'windows':values},ensure_ascii=False)}],'structuredContent':{'windows':values}}
+
+
 class Driver:
     def __init__(self):
         self.proc = None
@@ -53,7 +200,7 @@ class Driver:
             stderr=self.log, limit=16*1024*1024)
         self.reader = asyncio.create_task(self.read())
         await self.request('initialize', {'protocolVersion':'2025-03-26',
-            'capabilities':{},'clientInfo':{'name':'Clawith-Cua-atomic-adapter','version':'1'}})
+            'capabilities':{},'clientInfo':{'name':'Clawith-Cua-atomic-adapter','version':'1'}},timeout=120)
         await self.send({'jsonrpc':'2.0','method':'notifications/initialized'})
         reply = await self.request('tools/list', {})
         self.tools = {t['name']:t for t in reply.get('result',{}).get('tools',[]) if t['name'] in SAFE}
@@ -104,6 +251,7 @@ class Driver:
             raise ValueError('Unsupported arguments')
         action=args.get('action'); params=args.get('params',{})
         if not isinstance(params,dict): raise ValueError('params must be an object')
+        params=dict(params)
         if action=='help':
             name=params.get('name')
             if name and name not in self.tools: raise ValueError('Unknown action schema')
@@ -120,6 +268,10 @@ class Driver:
         closed=STATE/'closed'/sid
         if runtime is None and closed.exists() and action!='release':
             raise ValueError('This session was released. Use a NEW session_id for a new task; no action was dispatched.')
+        manual=params.pop('_recording_input',False)
+        if not isinstance(manual,bool):raise ValueError('Invalid recording input selector; no action was dispatched')
+        if manual and (runtime is not None or not re.fullmatch('record_[a-f0-9]{32}',sid)):
+            raise ValueError('Physical recording input requires an authorized manual recording; no action was dispatched')
         async with self.lock:
             if self.owner and self.owner!=sid:
                 expired=time.monotonic()>=self.expires
@@ -162,7 +314,7 @@ class Driver:
             self.owner=sid; self.expires=time.monotonic()+300
             self.owner_context=runtime
             params={**params,'session':sid}
-            fingerprint=hashlib.sha256(json.dumps([action,params],sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+            fingerprint=hashlib.sha256(json.dumps([action,params,{'recording_input':True}] if manual else [action,params],sort_keys=True,ensure_ascii=False).encode()).hexdigest()
             receipt=STATE/'calls'/f'{sid}-{ident}.json' if write else None
             if receipt and receipt.exists():
                 saved=json.loads(receipt.read_text(encoding="utf-8"))
@@ -172,12 +324,22 @@ class Driver:
                 receipt.write_text(json.dumps({'fingerprint':fingerprint,'status':'dispatched'}),encoding='utf-8');receipt.chmod(0o600)
             started=time.monotonic()
             try:
-                response=await self.request('tools/call',{'name':action,'arguments':params})
-                result=response.get('result')
+                if runtime is None and re.fullmatch('record_[a-f0-9]{32}',sid) and action in {'get_desktop_state','list_windows'}:
+                    result=recording_desktop() if action=='get_desktop_state' else recording_windows()
+                    response={'result':result}
+                elif manual:
+                    result=recording_input(action,params)
+                    response={'result':result}
+                else:
+                    response=await self.request('tools/call',{'name':action,'arguments':params})
+                    result=response.get('result')
                 if not isinstance(result,dict):
                     raise RuntimeError('Driver returned invalid result: '+str(response.get('error',{}))[:400])
             except (TimeoutError,RuntimeError) as exc:
                 result={'isError':True,'content':[{'type':'text','text':f'Unknown action outcome ({type(exc).__name__}); inspect desktop before retrying. No automatic replay.'}]}
+            if action in READS and not result.get('isError'):
+                result.setdefault('structuredContent',{})['recording_input_backend']='win32_send_input'
+                result['structuredContent']['recording_protocol']=2
             elapsed=round(time.monotonic()-started,3)
             with Path('C:/Clawith/out/calls.jsonl').open('a',encoding='utf-8')as log:
                 log.write(json.dumps({'action':action,'session_id':sid,'request_id':ident,
@@ -205,7 +367,7 @@ app=FastAPI(lifespan=lifespan)
 @app.get('/health')
 async def health():
     return {'ready':bool(driver.tools) and driver.proc.returncode is None,
-        'driver':'0.37.0','platform':os.name,'model_calls':0,'tools':sorted(driver.tools)}
+        'recording_protocol':2,'recording_input_backend':'win32_send_input','driver':'0.37.0','platform':os.name,'model_calls':0,'tools':sorted(driver.tools)}
 
 SCHEMA={'type':'object','properties':{
  'action':{'type':'string','enum':sorted(SAFE|{'help','release'})},

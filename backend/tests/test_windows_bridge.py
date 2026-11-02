@@ -108,3 +108,134 @@ def test_bridge_upload_preserves_exact_asset_below_windows_command_line_limit(tm
     blocks = [base64.b64decode(re.search(r"FromBase64String\('([^']+)'\)", s)[1]) for s in commands]
     assert b"".join(blocks) == ASSET.read_bytes()
     assert max(len(base64.b64encode(s.encode("utf-16-le"))) + 200 for s in commands) < 32767
+
+
+def planner():
+    tree = ast.parse(ASSET.read_text())
+    function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "recording_events")
+    namespace = {}
+    exec(compile(ast.Module(body=[function], type_ignores=[]), str(ASSET), "exec"), namespace)  # noqa: S102 -- Shipped pure planner only.
+    return namespace["recording_events"]
+
+
+def test_manual_input_plan_handles_scaled_pixels_unicode_and_modifier_release():
+    plan = planner()
+    assert plan("click", {"x": 1279, "y": 799}, 1280, 800) == [("move", 65535, 65535), ("left", False), ("left", True)]
+    assert len(plan("double_click", {"x": 0, "y": 0}, 1280, 800)) == 5
+    assert plan("type_text", {"text": "中😀"}, 1280, 800) == [
+        ("unicode", 0x4E2D, False),
+        ("unicode", 0x4E2D, True),
+        ("unicode", 0xD83D, False),
+        ("unicode", 0xD83D, True),
+        ("unicode", 0xDE00, False),
+        ("unicode", 0xDE00, True),
+    ]
+    assert plan("hotkey", {"key": "r", "modifiers": ["win"]}, 1280, 800) == [
+        ("key", 91, False),
+        ("key", 82, False),
+        ("key", 82, True),
+        ("key", 91, True),
+    ]
+    assert plan("scroll", {"direction": "down", "amount": 3}, 1280, 800) == [("wheel", -360, False)]
+
+
+@pytest.mark.parametrize(
+    "action,params",
+    [
+        ("click", {"x": 1280, "y": 10}),
+        ("click", {"x": -1, "y": 0}),
+        ("click", {"x": float("nan"), "y": 1}),
+        ("type_text", {"text": "x" * 8001}),
+        ("hotkey", {"key": "a", "modifiers": ["unsafe"]}),
+        ("scroll", {"direction": "down", "amount": 200}),
+        ("launch_app", {}),
+    ],
+)
+def test_invalid_manual_batches_fail_before_os_submission(action, params):
+    with pytest.raises(ValueError, match="no action was dispatched"):
+        planner()(action, params, 1280, 800)
+
+
+async def test_manual_input_is_fenced_durable_and_not_available_to_agent_runs(bridge):
+    driver, state = bridge
+    native = []
+    physical = []
+
+    async def request(method, params):
+        native.append(params)
+        return {"result": {"content": []}}
+
+    driver.request = request
+    driver.call.__globals__["recording_input"] = lambda action, params: (
+        physical.append((action, params.copy())) or {"content": [{"type": "text", "text": "submitted"}]}
+    )
+    denied = {
+        "action": "type_text",
+        "params": {"_recording_input": True, "text": "fixture"},
+        "session_id": "run_" + "a" * 32,
+        "request_id": "manual_fixture",
+    }
+    with pytest.raises(ValueError, match="authorized manual recording"):
+        await driver.call(denied)
+    assert not native and not physical and not list((state / "calls").iterdir())
+    sid = "record_" + "b" * 32
+    driver.owner = sid
+
+    def allowed():
+        return {
+            "action": "type_text",
+            "params": {"_recording_input": True, "text": "fixture"},
+            "session_id": sid,
+            "request_id": "manual_fixture",
+        }
+
+    first = await driver.call(allowed())
+    second = await driver.call(allowed())
+    assert first == second and len(physical) == 1 and not native
+    assert "_recording_input" not in physical[0][1]
+
+
+async def test_uncertain_physical_input_is_cached_without_replay(bridge):
+    driver, _ = bridge
+    sid = "record_" + "c" * 32
+    driver.owner = sid
+    attempts = []
+
+    def physical(action, params):
+        attempts.append(action)
+        raise RuntimeError("Unknown desktop input outcome; inspect the screen")
+
+    driver.call.__globals__["recording_input"] = physical
+
+    def args():
+        return {
+            "action": "type_text",
+            "params": {"_recording_input": True, "text": "fixture"},
+            "session_id": sid,
+            "request_id": "uncertain_fixture",
+        }
+
+    first = await driver.call(args())
+    second = await driver.call(args())
+    assert first["isError"] and second == first and attempts == ["type_text"]
+
+
+async def test_recording_frame_uses_current_console_capture_without_native_snapshot_cache(bridge):
+    driver, _ = bridge
+    sid = "record_" + "d" * 32
+    driver.owner = sid
+    calls = []
+
+    async def request(method, params):
+        calls.append(params["name"])
+        return {"result": {"content": []}}
+
+    driver.request = request
+    driver.call.__globals__["recording_desktop"] = lambda: {
+        "content": [{"type": "image", "data": "fresh-pixels"}],
+        "structuredContent": {"screenshot_width": 1280, "screenshot_height": 800},
+    }
+    result = await driver.call({"action": "get_desktop_state", "params": {}, "session_id": sid})
+    assert calls == ["start_session"]
+    assert result["content"][0]["data"] == "fresh-pixels"
+    assert result["structuredContent"]["recording_protocol"] == 2

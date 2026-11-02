@@ -585,6 +585,7 @@ class AutomationService:
                     request_id,
                     self.applications_for("record_" + r.id.hex),
                     literal=step.action != "assert_text",
+                    live=step.action != "assert_text",
                 )
             except DriverFailure as exc:
                 status, detail = ("unknown" if exc.uncertain else "failed"), str(exc)

@@ -1027,3 +1027,70 @@ Those inputs remain unknown/paused and must not be automatically repeated or
 counted as successful receipts. The recorder presents an explicit Chinese review
 instruction while retaining the raw diagnostic receipt. Read-back confirms the
 visible menu transition, not universal reliability of cross-process input.
+
+### Fullscreen recording and native manual control, 2026-11-01
+
+A subsequent real user recording had seven rejected clicks: foreground activation
+failed before any mouse input was sent. This was not merely slow display refresh.
+The paused recording was stopped through its authenticated API and its zero
+accepted steps were saved; historical rejected receipts remain inspectable.
+
+For managed manual recordings only, the guest broker now accepts a trusted
+physical-input selector from the capability. It requires a record_UUID label,
+rejects Agent Run contexts, and retains the same host nonce/lease and durable
+request-ID receipt boundaries. A bounded pure planner validates mouse position,
+keys/modifiers, scroll and UTF-16 text before a single Win32 SendInput batch.
+Partial/unknown OS submission remains unknown and is never replayed. Keyboard
+input uses scan codes; Unicode uses UTF-16 code units. No shell command or model
+code is exposed through this input path. Normal Agent Computer Use, fixed-script
+playback and legacy deployments retain their existing Cua execution policies.
+
+Manual recording frames use fresh GDI captures encoded as bounded PNG, and live
+HWND enumeration avoids relying on Cua snapshot state after external input.
+This makes the new console capture the confirmation authority for manual input;
+it does not establish that every older native capture failure was cache-related. A
+protocol2 capability marker is checked before physical dispatch, so outdated
+guests fail before input. Guest controls are upgraded independently of Windows
+and personal applications. The controller remains a hidden scheduled task.
+Cold native-driver initialization has a bounded120s handshake; startup still
+admits no input until an authenticated capture is available.
+
+The recording pane has native browser fullscreen with an in-page maximized
+fallback, a toolbar for exit/pause/save/Send Esc, and optional text entry for IME.
+It scales the whole image and projects clicks from its actual rendered rectangle.
+Full-window mode does not allocate another desktop or open another browser tab.
+Escape exits the viewer and is not sent to the guest. A stable workflow key keeps
+fullscreen alive when recording starts; the first new frame is cleared while
+connecting so previous pixels cannot be mistaken for a new live image.
+
+Verification separates transport-mocked UI checks from real Windows execution.
+The UI test covered1440x900,900x600 and390x844 layouts, image aspect/viewport fit,
+scaled click coordinates, exit without stopping recording, and Escape isolation.
+A genuine new recording on Windows then opened Start, clicked back into a window,
+used Win+R to launch a unique Notepad fixture, typed Chinese plus emoji, saved,
+and verified both the window text and the independent disk contents. All11
+receipts were recorded; the recording was stopped/saved afterward. No model
+participated in that infrastructure acceptance. Earlier failed harness attempts
+remain failed and are not represented as acceptance successes.
+
+Final browser acceptance also used the real Windows transport, not intercepts:
+enter fullscreen, use desktop clicks and Run, enter Chinese/emoji, save with
+Ctrl+S, then stop/save through the UI. Independent file readback confirmed the
+unique marker and original fixture text; the persisted workflow contained nine
+steps. The UI-only suite additionally covered starting while already fullscreen,
+IME text entry controls, and injected frame-connection failure: the error remains
+visible inside fullscreen, stale-frame input is blocked, and polling recovery
+reenables input. Neither suite controlled the user's Mac screen.
+
+A separate previously saved test-account desktop was found locked during the
+fleet control-component rollout. Its data/password were not reset. A direct
+credential verification confirmed the platform-stored local Windows credential;
+unlock maintenance uses that credential only within its own VM. The user-facing
+acceptance applies to the current account/Agent desktop, not an assertion that
+all Windows lockscreen/SSO recovery paths are automated by this release.
+
+Final focused backend verification:73 tests passed; scoped Ruff/Pyright and
+frontend TypeScript/lint/build passed. The active user's recording desktop and
+two other managed desktops passed protocol2 control-component checks. The fourth
+test desktop's lockscreen recovery is a separate maintenance boundary; do not
+count a copied component as a usable desktop before interactive readiness.

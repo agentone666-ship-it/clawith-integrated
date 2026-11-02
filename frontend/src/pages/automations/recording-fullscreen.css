@@ -1,0 +1,65 @@
+.auto-recording.is-fullscreen,
+.auto-recording:fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100dvh;
+  padding: 12px;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+.auto-recording.is-fullscreen > .auto-toolbar {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.auto-recording.is-fullscreen > .auto-hint,
+.auto-recording.is-fullscreen > .auto-inputs,
+.auto-recording.is-fullscreen > .auto-step-strip {
+  display: none;
+}
+.auto-recording.is-fullscreen > .auto-notice {
+  flex: 0 0 auto;
+  margin: 0;
+  max-height: 20vh;
+  overflow: auto;
+}
+.auto-recording.is-fullscreen > .auto-desktop {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #101215;
+}
+.auto-recording.is-fullscreen .auto-desktop img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+}
+.auto-recording.is-fullscreen.show-fullscreen-input > .auto-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 0 0 auto;
+  max-height: 30vh;
+  overflow: auto;
+  margin: 0;
+}
+.auto-recording.is-fullscreen.show-fullscreen-input
+  > .auto-inputs
+  > .auto-card:nth-child(2) {
+  display: none;
+}
+.auto-recording.is-fullscreen > .auto-error-banner {
+  flex: 0 0 auto;
+  max-height: 20vh;
+  overflow: auto;
+  margin: 0;
+}
