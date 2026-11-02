@@ -30,10 +30,21 @@ $ErrorActionPreference='Stop'
 $result=@{ok=$false;user=[Security.Principal.WindowsIdentity]::GetCurrent().Name;is_system=[Security.Principal.WindowsIdentity]::GetCurrent().IsSystem}
 try {
  if ($result.is_system) {throw 'Desktop registration requires the interactive user'}
- foreach($name in @('MicrosoftWindows.Client.CBS_cw5n1h2txyewy','Microsoft.UI.Xaml.CBS_8wekyb3d8bbwe','MicrosoftWindows.Client.Core_cw5n1h2txyewy')) {
+ # Register framework and its consumers atomically: an unreferenced standalone
+ # framework can be scavenged immediately after a successful registration.
+ $framework='C:\Windows\SystemApps\Microsoft.UI.Xaml.CBS_8wekyb3d8bbwe\AppxManifest.xml'
+ foreach($name in @('ShellExperienceHost_cw5n1h2txyewy','Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy')) {
+  Add-AppxPackage -Register -Path "C:\Windows\SystemApps\$name\AppxManifest.xml" -DependencyPath $framework -DisableDevelopmentMode -ErrorAction Stop
+ }
+ foreach($name in @('MicrosoftWindows.Client.CBS_cw5n1h2txyewy','MicrosoftWindows.Client.Core_cw5n1h2txyewy')) {
   $file="C:\Windows\SystemApps\$name\AppxManifest.xml"
   if (Test-Path $file) {Add-AppxPackage -Register -Path $file -DisableDevelopmentMode -ErrorAction Stop}
  }
+ $desktop=[Environment]::GetFolderPath('Desktop')
+ $shell=New-Object -ComObject WScript.Shell
+ $browser='C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
+ if(Test-Path $browser) {$link=$shell.CreateShortcut("$desktop\Microsoft Edge.lnk");$link.TargetPath=$browser;$link.Save()}
+ $link=$shell.CreateShortcut("$desktop\This PC.lnk");$link.TargetPath='C:\Windows\explorer.exe';$link.Arguments='shell:MyComputerFolder';$link.Save()
  $result.ok=$true
 } catch {$result.error=$_.Exception.Message}
 $result | ConvertTo-Json | Set-Content C:\Clawith\private\first-logon-ready.json

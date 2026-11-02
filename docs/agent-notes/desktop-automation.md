@@ -986,3 +986,28 @@ the desktop. This remains a request/screenshot recorder, not a remote-desktop
 stream; do not claim RDP-like latency or universal frame-rate improvement without
 live measurements. Applying the backend change must wait for existing recordings
 and in-flight inputs to finish; tests/build alone are not deployment acceptance.
+
+### Recorder release and shell repair acceptance, 2026-11-01
+
+After the user stopped/saved the recording, the input fix was deployed with the
+main Runtime container identity unchanged. An actual recording against the
+existing synthetic Notepad fixture accepted three clicks in0.577–0.642s, followed
+by fresh frame requests in0.352–0.395s. A new unique text marker was read back
+through the target window's accessibility tree. Two earlier harness attempts
+selected a background fixture while clicking an overlapping foreground window;
+they failed their target assertions and are not counted as successful trials.
+The successful trial covers a visible foreground application, not all window
+activation paths. Current UI remains polling-based, and busy input is explained
+rather than silently ignored; this is not continuous keyboard/mouse streaming.
+
+The shell investigation found the standalone XAML framework registration could
+report success and immediately undergo automatic removal. Registering
+ShellExperienceHost and StartMenuExperienceHost with their framework in the same
+DependencyPath operation retained the dependency. The actual ShellExperienceHost
+manifest folder is ShellExperienceHost_cw5n1h2txyewy. Re-registering Client.CBS/Core
+and restarting Explorer (without stopping SiHost, logging off or rebooting)
+restored the idle desktop taskbar and Explorer. Personal application windows
+remained open. First-logon bootstrap now uses the same atomic dependency setup
+and adds Edge/This PC shortcuts; pre-personalized desktops are not reinitialized.
+Edge was already present in the image; no third-party browser download or proxy
+was installed. Browser network reachability is a separate acceptance boundary.
