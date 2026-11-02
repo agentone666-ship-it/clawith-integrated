@@ -103,10 +103,13 @@ export function RecordingPanel({
         );
         current.current = result.recording;
         onRecording(result.recording);
+        const detail = result.status === "unknown"
+          ? "这次操作需要确认，录制已暂停。请核对下方画面后继续，避免重复点击。"
+          : result.detail;
         if (result.status === "failed" || result.status === "unknown") {
-          onError(result.detail);
+          onError(detail);
         }
-        setNotice(result.detail + " · 正在更新画面…");
+        setNotice(detail + " · 正在更新画面…");
       } catch (error) {
         onError(error instanceof Error ? error.message : "桌面操作失败");
       } finally {

@@ -1011,3 +1011,19 @@ remained open. First-logon bootstrap now uses the same atomic dependency setup
 and adds Edge/This PC shortcuts; pre-personalized desktops are not reinitialized.
 Edge was already present in the image; no third-party browser download or proxy
 was installed. Browser network reachability is a separate acceptance boundary.
+
+The same shell repair subsequently succeeded on the user's desktop without a
+Windows reboot or logoff. Actual console images showed the opened Start menu,
+Edge desktop shortcut and taskbar. A real recording used Win+R, typed the Edge
+command and loaded microsoft.com; the resulting window/title and screenshot were
+read back. No browser-account sign-in or external installer was used.
+The private host service loaded the updated bootstrap after recording ended.
+A fresh-clone provisioning trial with this bootstrap has not yet been repeated.
+
+One native-driver limitation remains: a taskbar click can open Start successfully
+and still return foreground_unavailable because the foreground window belongs
+to another process. An explicit native desktop target produced the same result.
+Those inputs remain unknown/paused and must not be automatically repeated or
+counted as successful receipts. The recorder presents an explicit Chinese review
+instruction while retaining the raw diagnostic receipt. Read-back confirms the
+visible menu transition, not universal reliability of cross-process input.
