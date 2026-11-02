@@ -106,3 +106,9 @@ pending text before navigation keys or pointer actions, and drain accepted input
 before pause/save. Failed/uncertain writes clear later pending input without
 replay. Neither an observer nor a rerender may claim a desktop session. Maintain
 whole-image fitting, IME focus and coordinate mapping from the actual image.
+
+Cloud desktop login sharing uses the managed Business Browser and the current
+account. Show the host-owned browser sync projection without exposing secrets or
+adding per-Agent credential configuration. Saved desktops sync on restore; do
+not present an old saved snapshot as currently synchronized. Keep instance/file
+isolation distinct from browser login sharing.

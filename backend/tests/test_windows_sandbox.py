@@ -252,6 +252,8 @@ def test_initial_personalization_waits_for_a_new_interactive_logon(tmp_path, mon
     monkeypatch.setattr(p, "powershell", powershell)
     monkeypatch.setattr(p, "initialize_shell", lambda ident: None)
     monkeypatch.setattr(p, "upload_bridge", lambda ident: None)
+    monkeypatch.setattr(p, "upload_browser", lambda ident: None)
+    monkeypatch.setattr(p, "configure_browser", lambda ident: None)
     monkeypatch.setattr("time.sleep", lambda seconds: None)
     p.personalize(str(uuid.uuid4()), "private-token", "private-password")
     assert len(commands) == 8
@@ -380,7 +382,7 @@ def test_readiness_uses_normal_capture_budget_and_keeps_one_session_across_timeo
             pass
 
         def get(self, *args, **kwargs):
-            return httpx.Response(200, json={"ready": True})
+            return httpx.Response(200, json={"ready": True, "browser_sync_protocol": 1})
 
         def post(self, url, *, headers, json):
             args = json["params"]["arguments"]
@@ -525,3 +527,47 @@ async def test_inventory_actions_hide_foreign_desktops_before_forwarding(fixture
     assert calls == ["/v1/desktops", "/v1/desktops"]
     assert (await inventory.action(USER, desktop, "save"))["state"] == "saved"
     assert calls[-1] == f"/v1/desktops/{desktop}/save"
+
+
+def test_existing_host_database_upgrade_preserves_account_identity_and_guest_credentials(manager):
+    m, _ = manager
+    ident = m.create(scope())
+    prior = dict(m.row(ident))
+    m.db.execute("ALTER TABLE desktops DROP COLUMN browser_protocol")
+    m.db.commit()
+    reopened = Manager(m.provider.root / "state.sqlite", m.provider)
+    try:
+        row = reopened.row(ident)
+        assert row["browser_protocol"] == 0
+        assert (row["tenant"], row["owner"], row["agent"], row["password"], row["token"]) == tuple(
+            prior[k] for k in ["tenant", "owner", "agent", "password", "token"]
+        )
+    finally:
+        reopened.db.close()
+
+
+async def test_old_ready_guest_upgrades_before_use_and_flushes_login_state_before_save(manager, monkeypatch):
+    m, _ = manager
+    ident = m.create(scope())
+    await m.ensure(ident)
+    m.db.execute("UPDATE desktops SET browser_protocol=0 WHERE id=?", (ident,))
+    m.db.commit()
+    events = []
+
+    async def synchronize(value):
+        assert value == ident and m.row(ident)["state"] == "ready"
+        events.append("sync")
+
+    def ready(*args):
+        events.append("guest_ready")
+        return "10.253.0.10"
+
+    monkeypatch.setattr(m.provider, "ready", ready)
+    m.browser_sync = SimpleNamespace(synchronize=synchronize)
+    await m.ensure(ident)
+    assert events == ["guest_ready", "sync"] and m.row(ident)["browser_protocol"] == 1
+    await m.ensure(ident)
+    assert events == ["guest_ready", "sync"]
+    await m.suspend(ident)
+    assert events == ["guest_ready", "sync", "sync"]
+    assert m.row(ident)["state"] == "saved" and ident not in m.provider.running

@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from .browser_sync import BrowserSync
 from .manager import Manager, SandboxError
 from .provider import Libvirt
 
@@ -56,10 +57,13 @@ async def lifespan(app):
         idle_seconds=int(os.getenv("WINDOWS_SANDBOX_IDLE_SECONDS", "600")),
         max_running=int(os.getenv("WINDOWS_SANDBOX_MAX_RUNNING", "2")),
     )
+    app.state.manager.browser_sync = BrowserSync(app.state.manager, state / "browser-state.key")
+    browser_worker = asyncio.create_task(app.state.manager.browser_sync.run())
     worker = asyncio.create_task(reap(app.state.manager))
     yield
     worker.cancel()
-    await asyncio.gather(worker, return_exceptions=True)
+    browser_worker.cancel()
+    await asyncio.gather(worker, browser_worker, return_exceptions=True)
     app.state.manager.db.close()
 
 

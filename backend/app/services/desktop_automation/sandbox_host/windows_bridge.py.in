@@ -15,6 +15,9 @@ import uuid
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import uvicorn
+from browser_guest import Browser
+
+browser=Browser()
 
 os.environ['PATH']='C:/Clawith/Python;'+os.environ.get('PATH','')
 STATE = Path('C:/Clawith/state')
@@ -24,6 +27,27 @@ SAFE = {'list_apps','list_windows','get_window_state','get_desktop_state',
         'type_text','press_key','hotkey','scroll','drag','set_value','launch_app'}
 READS = {'list_apps','list_windows','get_window_state','get_desktop_state',
          'get_accessibility_tree','get_screen_size'}
+
+def business_browser_params(params):
+    """Route Edge launches from all Tool consumers to this VM's managed profile."""
+    path=params.get('path')
+    if not isinstance(path,str) or path.replace('\\','/').rsplit('/',1)[-1].lower()!='msedge.exe':
+        return params
+    arguments=params.get('additional_arguments',[])
+    if not isinstance(arguments,list) or len(arguments)>64 or any(not isinstance(v,str) for v in arguments):
+        raise ValueError('Invalid browser arguments; no action was dispatched')
+    owned={'--user-data-dir','--remote-debugging-port','--remote-debugging-address','--remote-allow-origins'}
+    kept=[];skip=False
+    for arg in arguments:
+        if skip:skip=False;continue
+        name=arg.split('=',1)[0]
+        if name in owned:
+            skip='='not in arg
+        else:kept.append(arg)
+    return {**params,'additional_arguments':kept+[
+        '--user-data-dir=C:/Users/Clawith/AppData/Local/Clawith/BusinessBrowser',
+        '--remote-debugging-address=127.0.0.1','--remote-debugging-port=9222','--no-first-run']}
+
 
 def compact_schema(value):
     """Keep native parameter constraints while bounding repeated prose."""
@@ -252,6 +276,7 @@ class Driver:
         action=args.get('action'); params=args.get('params',{})
         if not isinstance(params,dict): raise ValueError('params must be an object')
         params=dict(params)
+        if action=='launch_app':params=business_browser_params(params)
         if action=='help':
             name=params.get('name')
             if name and name not in self.tools: raise ValueError('Unknown action schema')
@@ -359,7 +384,9 @@ async def lifespan(app):
     (STATE/'calls').mkdir(parents=True,exist_ok=True)
     (STATE/'closed').mkdir(parents=True,exist_ok=True)
     await driver.start()
+    await browser.start()
     yield
+    await browser.stop()
     await driver.stop()
 
 app=FastAPI(lifespan=lifespan)
@@ -367,7 +394,35 @@ app=FastAPI(lifespan=lifespan)
 @app.get('/health')
 async def health():
     return {'ready':bool(driver.tools) and driver.proc.returncode is None,
-        'recording_protocol':2,'recording_input_backend':'win32_send_input','driver':'0.37.0','platform':os.name,'model_calls':0,'tools':sorted(driver.tools)}
+        'browser_sync_protocol':1,'recording_protocol':2,'recording_input_backend':'win32_send_input','driver':'0.37.0','platform':os.name,'model_calls':0,'tools':sorted(driver.tools)}
+
+@app.get('/browser/snapshot')
+async def browser_snapshot(req:Request):
+    if not secrets.compare_digest(req.headers.get('authorization',''),'Bearer '+TOKEN):
+        return JSONResponse({'error':'Unauthorized'},status_code=401)
+    async with browser.lock:
+        try:
+            async with asyncio.timeout(10):return await browser.snapshot()
+        except (RuntimeError,TimeoutError,KeyError):
+            return JSONResponse({'error':'Business browser state is not ready'},status_code=409)
+
+@app.post('/browser/apply')
+async def browser_apply(req:Request):
+    if not secrets.compare_digest(req.headers.get('authorization',''),'Bearer '+TOKEN):
+        return JSONResponse({'error':'Unauthorized'},status_code=401)
+    raw=bytearray()
+    async for chunk in req.stream():
+        raw.extend(chunk)
+        if len(raw)>5*1024*1024:return JSONResponse({'error':'Request too large'},status_code=413)
+    try:body=json.loads(raw)
+    except ValueError:return JSONResponse({'error':'Invalid browser state'},status_code=400)
+    if not isinstance(body,dict) or set(body)!={'state','expected'} or not isinstance(body['state'],dict):
+        return JSONResponse({'error':'Invalid browser state'},status_code=400)
+    async with browser.lock:
+        try:
+            async with asyncio.timeout(10):return await browser.apply(body['state'],body['expected'])
+        except (RuntimeError,TimeoutError,KeyError):
+            return JSONResponse({'error':'Business browser synchronization is unconfirmed'},status_code=409)
 
 SCHEMA={'type':'object','properties':{
  'action':{'type':'string','enum':sorted(SAFE|{'help','release'})},
@@ -386,7 +441,7 @@ async def mcp(req:Request):
     try:
         if method=='initialize':result={'protocolVersion':'2025-03-26','capabilities':{'tools':{}},'serverInfo':{'name':'clawith-cua-driver-atomic','version':'1'}}
         elif method=='tools/list':result={'tools':[{'name':'computer','description':
-            'Direct model-free Cua Driver control of an isolated Windows VM desktop. Runtime automatically binds and releases task sessions: do not supply session_id or params.session. First read get_desktop_state/list_apps; use help params={name:ACTION} for exact params. Writes need request_id. Use list_apps to discover the Windows browser name before launch_app. Read state after writes; release when finished. No child model calls; never controls the user Mac.',
+            'Direct model-free Cua Driver control of an isolated Windows VM desktop. Runtime automatically binds and releases task sessions: do not supply session_id or params.session. First read get_desktop_state/list_apps; use help params={name:ACTION} for exact params. Writes need request_id. For shared business login use the Business Browser (业务浏览器) desktop/Start shortcut; use list_apps to discover its exact name before launch_app. Read state after writes; release when finished. No child model calls; never controls the user Mac.',
             'inputSchema':SCHEMA}]}
         elif method=='tools/call':
             p=body.get('params',{})

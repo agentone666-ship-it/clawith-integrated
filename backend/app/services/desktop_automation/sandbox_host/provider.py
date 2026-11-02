@@ -263,6 +263,60 @@ try {{$b=[Convert]::FromBase64String('{chunk}');$f.Write($b,0,$b.Length)}} final
 """,
             )
 
+    def upload_browser(self, ident: str) -> None:
+        source = Path(__file__).with_name("browser_guest.py").read_bytes()
+        for offset in range(0, len(source), 3072):
+            chunk = base64.b64encode(source[offset : offset + 3072]).decode()
+            mode = "Create" if offset == 0 else "Append"
+            self.powershell(
+                ident,
+                f"""$ErrorActionPreference='Stop'
+$f=[IO.File]::Open('C:\\Clawith\\browser_guest.py',[IO.FileMode]::{mode},[IO.FileAccess]::Write)
+try {{$b=[Convert]::FromBase64String('{chunk}');$f.Write($b,0,$b.Length)}} finally {{$f.Dispose()}}
+""",
+            )
+
+    def configure_browser(self, ident: str) -> None:
+        # Dedicated profile: no copying encrypted databases or modifying an old profile.
+        self.powershell(
+            ident,
+            r"""$ErrorActionPreference='Stop'
+& C:\Clawith\Python\python.exe -c "import importlib.metadata as m,sys;v=next((d.version for d in m.distributions() if d.metadata['Name']=='websockets'),None);sys.exit(0 if v=='15.0.1' else 1)"
+if ($LASTEXITCODE -ne 0) {
+ & C:\Clawith\Python\python.exe -m pip install --disable-pip-version-check --only-binary=:all: --timeout 10 --retries 1 websockets==15.0.1 | Out-Null
+ if ($LASTEXITCODE -ne 0) {throw 'Business browser dependency installation failed'}
+}
+$browserProfile='C:\Users\Clawith\AppData\Local\Clawith\BusinessBrowser'
+New-Item -ItemType Directory -Path $browserProfile -Force | Out-Null
+$shell=New-Object -ComObject WScript.Shell
+foreach($folder in @('C:\Users\Clawith\Desktop','C:\Users\Clawith\AppData\Roaming\Microsoft\Windows\Start Menu\Programs')) {
+ New-Item -ItemType Directory -Path $folder -Force | Out-Null
+ foreach($name in @('业务浏览器','Microsoft Edge')) {
+  $link=$shell.CreateShortcut("$folder\$name.lnk")
+  $link.TargetPath='C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
+  $link.Arguments='--user-data-dir="C:\Users\Clawith\AppData\Local\Clawith\BusinessBrowser" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-first-run'
+  $link.Save()
+ }
+}
+""",
+        )
+
+    def upgrade_browser(self, ident: str) -> None:
+        # Called only while this desktop's lifecycle lock excludes business input.
+        self.upload_browser(ident)
+        self.upload_bridge(ident)
+        self.configure_browser(ident)
+        self.powershell(
+            ident,
+            r"""$ErrorActionPreference='Stop'
+# Stop only the managed controller; preserve business browsers and all user apps.
+Stop-ScheduledTask -TaskName 'Clawith-CUA-Interactive'
+Get-CimInstance Win32_Process | Where-Object {$_.Name -eq 'python.exe' -and $_.CommandLine -match 'C:\\Clawith\\bridge.py'} | ForEach-Object {Stop-Process -Id $_.ProcessId -Force}
+Start-Sleep -Seconds 1
+Start-ScheduledTask -TaskName 'Clawith-CUA-Interactive'
+""",
+        )
+
     def personalize(self, ident: str, token: str, password: str) -> None:
         # Values are generated server-side using URL-safe ASCII, never user code.
         previous = self.powershell(
@@ -270,6 +324,8 @@ try {{$b=[Convert]::FromBase64String('{chunk}');$f.Write($b,0,$b.Length)}} final
             "$ErrorActionPreference='Stop';if ((Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Setup\\State').ImageState -ne 'IMAGE_STATE_COMPLETE') {throw 'Waiting for Windows first-boot setup'};(Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToString('o')",
         ).strip()
         self.upload_bridge(ident)
+        self.upload_browser(ident)
+        self.configure_browser(ident)
         secret_code = base64.b64encode(AUTOLOGON_SECRET.encode()).decode()
         startup_code = base64.b64encode(CONTROLLER_STARTUP.encode()).decode()
         self.powershell(
@@ -388,6 +444,9 @@ if ($LASTEXITCODE -ne 0) {{throw 'Interactive shell initialization did not launc
                 with httpx.Client(trust_env=False, timeout=httpx.Timeout(45, connect=2)) as client:
                     response = client.get("http://" + ip + ":8090/health", timeout=2)
                     if response.status_code == 200 and response.json().get("ready"):
+                        if response.json().get("browser_sync_protocol") != 1:
+                            self.upgrade_browser(ident)
+                            continue
                         # Prove an interactive screenshot exists before admitting inputs.
                         body = {
                             "jsonrpc": "2.0",

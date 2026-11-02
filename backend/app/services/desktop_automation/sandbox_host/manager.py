@@ -11,10 +11,14 @@ import sqlite3
 import time
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
 
 from .provider import ProviderError
+
+if TYPE_CHECKING:
+    from .browser_sync import BrowserSync
 
 
 class SandboxError(RuntimeError):
@@ -35,19 +39,23 @@ class Manager:
             id TEXT PRIMARY KEY, tenant TEXT NOT NULL, owner TEXT NOT NULL, agent TEXT NOT NULL,
             state TEXT NOT NULL, token TEXT NOT NULL, password TEXT NOT NULL,
             personalized INTEGER NOT NULL DEFAULT 0, compute_held INTEGER NOT NULL DEFAULT 0, ip TEXT NOT NULL DEFAULT '',
-            created REAL NOT NULL, idle_since REAL NOT NULL, last_error TEXT NOT NULL DEFAULT '',
+            created REAL NOT NULL, idle_since REAL NOT NULL, last_error TEXT NOT NULL DEFAULT '', browser_protocol INTEGER NOT NULL DEFAULT 0,
             UNIQUE(tenant,owner,agent));
           CREATE TABLE IF NOT EXISTS leases (
             nonce TEXT PRIMARY KEY, desktop TEXT NOT NULL, operation TEXT NOT NULL,
             state TEXT NOT NULL, heartbeat REAL NOT NULL);
           CREATE INDEX IF NOT EXISTS active_leases ON leases(desktop,state);
         """)
+        if "browser_protocol" not in {column[1] for column in self.db.execute("PRAGMA table_info(desktops)")}:
+            self.db.execute("ALTER TABLE desktops ADD COLUMN browser_protocol INTEGER NOT NULL DEFAULT 0")
+            self.db.commit()
         self.provider = provider
         self.idle_seconds, self.lease_seconds, self.max_running = idle_seconds, lease_seconds, max_running
         self.locks: dict[str, asyncio.Lock] = {}
         self.admission = asyncio.Lock()
         self.startups: dict[str, asyncio.Task] = {}
         self.clock = time.time
+        self.browser_sync: BrowserSync | None = None
 
     def row(self, ident: str):
         value = self.db.execute("SELECT * FROM desktops WHERE id=?", (str(uuid.UUID(ident)),)).fetchone()
@@ -105,6 +113,7 @@ class Manager:
             "idle_seconds": max(0, int(self.clock() - row["idle_since"])) if not lease else 0,
             "auto_save_after_seconds": self.idle_seconds,
             "last_error": row["last_error"],
+            "browser_sync": self.browser_sync.vault.view(row["id"]) if self.browser_sync else None,
         }
 
     def listing(self, tenant: str, owner: str) -> list[dict]:
@@ -139,7 +148,11 @@ class Manager:
 
     async def ensure(self, ident: str) -> None:
         row = self.row(ident)
-        if row["state"] == "ready" and await asyncio.to_thread(self.provider.state, ident) == "running":
+        if (
+            row["state"] == "ready"
+            and (self.browser_sync is None or row["browser_protocol"] == 1)
+            and await asyncio.to_thread(self.provider.state, ident) == "running"
+        ):
             return
         async with self.admission:
             count = self.db.execute(
@@ -167,9 +180,12 @@ class Manager:
             self.db.commit()
             raise SandboxError(str(exc), 503) from exc
         self.db.execute(
-            "UPDATE desktops SET state='ready',personalized=1,ip=?,idle_since=? WHERE id=?", (ip, self.clock(), ident)
+            "UPDATE desktops SET state='ready',personalized=1,browser_protocol=1,ip=?,idle_since=? WHERE id=?",
+            (ip, self.clock(), ident),
         )
         self.db.commit()
+        if self.browser_sync:
+            await self.browser_sync.synchronize(ident)
 
     async def prepare(self, ident: str) -> None:
         async def boot():
@@ -292,6 +308,8 @@ class Manager:
                 raise SandboxError("An active task still owns this desktop; stop the task before saving")
             if row["state"] in {"saved", "stopped"}:
                 return
+            if self.browser_sync and row["state"] == "ready":
+                await self.browser_sync.synchronize(ident)
             self.db.execute("UPDATE desktops SET state='saving' WHERE id=?", (ident,))
             self.db.commit()
             try:

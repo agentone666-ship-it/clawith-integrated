@@ -795,8 +795,12 @@ persistent Windows VM. Personal login state, installed software, application
 state and files survive compute reclamation. The clean image is used only at
 first creation. A used/personalized VM never becomes another account's pool
 member. Multiple Agents of one account run separate guest processes/disks and
-browser profiles. Sharing a published Tool or workflow shares source, not a VM
-or its creator's login state. No writable browser profile is concurrently mounted.
+browser profiles. Within the same tenant/account, the managed Business Browser
+synchronizes Cookie and LocalStorage state through the host-owned encrypted
+account vault described below. Different accounts never share that vault.
+Sharing a published Tool/workflow still shares source, not its creator's VM or
+account login state: invocations resolve their own origin account. No writable
+browser profile is concurrently mounted.
 
 The host service `sandbox_host` is the sole lifecycle/lease authority. It owns
 private SQLite identity records, independent qcow2 overlays, NVRAM/vTPM state,
@@ -1141,3 +1145,84 @@ guest, save with Ctrl+S, and stop/save18 recorded actions. Independent disk
 readback matched the complete duplicated text; no model participated in this
 infrastructure acceptance. Frontend deployment retains old assets and replaces
 the HTML index atomically; the Runtime/backend container was not restarted.
+
+
+### Account-shared browser login state (2026-11-02)
+
+**Product contract.** Instances/processes, tabs, downloads and Windows files stay
+Agent-private. The same `(tenant, origin account)` shares the managed Business
+Browser's cookies (including HttpOnly/session cookies and partition identity)
+and complete HTTP(S)-origin LocalStorage. An account can log in once and use the
+same identity from its other Agents. Logging out deletes synchronized items;
+tombstones prevent a stale/offline Agent from resurrecting them. LocalStorage
+also includes site preferences where an application stores them there; it is
+not a heuristic authentication-key whitelist. SessionStorage, IndexedDB,
+password autofill, passkeys, device-bound/native-app credentials and default
+browser profiles outside the managed shortcut are not synchronized.
+
+**Owner and transport.** `sandbox_host.browser_state.BrowserStates` is the sole
+canonical owner. It selects scope from the host's existing desktop identity,
+never a browser/model-supplied account. Canonical account and per-desktop merge
+baselines are AES-GCM ciphertext in the private host SQLite database. Associated
+data binds each blob to tenant/account (plus desktop for baselines). The random
+32-byte key is stored separately as mode0600 `browser-state.key`; back up that
+key with the private database, never include it in artifacts or Runtime config.
+No cookie/token values are returned to inventory, Runtime, models, tracing or
+logs. Inventory exposes only status, sync timestamp and conflict count.
+
+The interactive guest bridge imports the shipped `browser_guest.py` and exposes
+only authenticated `/browser/snapshot` and `/browser/apply`, using the existing
+per-desktop secret. It never exposes arbitrary CDP. The adapter connects only to
+Edge's guest-loopback debugger. Desktop/Start shortcuts “业务浏览器” and Microsoft
+Edge target the dedicated per-VM `BusinessBrowser` profile. Guest `launch_app`
+also resolves msedge.exe arguments to that profile for Computer Use/RPA/Python
+consumers, preserving URLs while replacing caller profile/debug overrides. Debugging is bound
+to127.0.0.1. Old/default profiles remain intact; their DPAPI databases are not
+copied. Existing users log in once in this browser. Guest setup requires the
+pinned websockets15.0.1 package; host setup requires cryptography. These do not
+change the model or introduce a GUI agent runtime.
+
+**Reconciliation and lifecycle.** Host polling checks ready desktops every three
+seconds after the preceding pass (eventual synchronization, not a three-second
+SLA). Independent browser transactions serialize per desktop and account but
+never hold the pointer/keyboard execution lock. Restore performs an initial
+sync before returning readiness; save flushes observed browser state before
+releasing compute. No browser is force-started, reloaded or closed to sync.
+Closed browsers show waiting; retained snapshots resume when their browser opens.
+Opening an already loaded site may require its ordinary refresh if the web app
+caches authentication in JavaScript memory; synchronization does not reload it.
+
+Merging compares observed values with the last acknowledged canonical baseline.
+Disjoint changes merge; concurrently changed identical keys keep the already
+committed canonical value. A peer cannot publish again after an unacknowledged
+apply until reconciliation succeeds. Browser epochs distinguish a browser
+restart/session-cookie loss from an actual logout. Expired cookies are pruned
+by host wall time even when source VMs are saved. Unobserved LocalStorage origins
+are never interpreted as deletions. LocalStorage changes are written once into
+the real origin database using a hidden, temporary, request-intercepted empty
+CDP document. All requests are fulfilled locally and service workers bypassed;
+no business network request or app JavaScript runs in that document. The hidden
+target is closed in `finally`, including failure/cancellation. No visible tab or
+window is created, and no script/marker re-injects old auth on later navigation.
+This preserves logout implementations that clear storage and redirect at once.
+No recording or desktop input lease is claimed by browser synchronization.
+
+Bounds:2MiB serialized snapshot/canonical state,4096 items including tombstones,
+128 observed origins,64 attached targets,128 pending CDP requests,10-second guest
+operation deadlines plus bounded hidden-target cleanup, bounded host responses, at most10 ready rows per poll.
+Overflow or an unknown write outcome leaves visible error/pending state; no
+truncation or unconditional account overwrite. Single-use refresh-token rotation,
+SSO/device binding and app-specific storage schemes still need business-system
+validation/adapters; generic copying cannot guarantee every system's acceptance.
+
+**Verification.** Focused tests cover three-way updates/deletion/conflicts,
+account/tenant separation, ciphertext/AAD binding, pending apply, restart epochs,
+expiration and byte/item boundaries. The opt-in integration test starts three
+real isolated Chromium processes, executes the shipped guest HTTP routes and
+host coordinator, and checks server-observed HttpOnly cookies plus destination
+LocalStorage, refresh/logout/relogin, a real browser restart, lost receipts and
+cross-account isolation. Run from backend with
+`CLAWITH_TEST_BROWSER=/path/to/chromium .venv/bin/python -m pytest -q tests/test_browser_state_integration.py`.
+This proves local Chromium protocol behavior; server deployment and real Windows
+Edge acceptance remain separate evidence. As of this change, access to the dev
+server was interrupted before installation, so no live deployment is claimed.

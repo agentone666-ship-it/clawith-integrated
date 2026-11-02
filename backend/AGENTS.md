@@ -236,3 +236,11 @@ to authenticated manual recording labels; Agent Run input retains the Cua path.
 Validate complete input batches before submission and retain single-dispatch
 receipts and uncertain-result fencing. Do not substitute cached Cua pixels after
 external input. See the desktop automation note for scope and acceptance.
+
+Account browser state belongs to `desktop_automation/sandbox_host/browser_state.py`:
+key canonical state by verified tenant/account; keep VM/browser processes keyed
+by Agent. `browser_sync.py` owns per-account merge/apply transactions independently
+of pointer input. Guest broker endpoints expose only bounded snapshot/apply,
+never arbitrary CDP. No raw authentication state may enter Runtime, model-visible
+Tool results, inventory, logs or test artifacts. See the owning desktop note for
+restart, logout, encryption, scope and pending-apply semantics.

@@ -20,6 +20,11 @@ interface CloudDesktop {
   memory_mib: number;
   auto_save_after_seconds: number;
   last_error: string;
+  browser_sync?: {
+    status: "waiting" | "syncing" | "synced" | "error";
+    synced: number | null;
+    conflicts: number;
+  } | null;
 }
 
 const labels: Record<CloudDesktop["state"], string> = {
@@ -100,7 +105,7 @@ export function CloudDesktops({ onRecordingCreated }: Props) {
           <h2>我的云电脑</h2>
           <p className="auto-muted">
             每位员工使用独立的 Windows
-            环境，归属当前账号。登录态、软件和文件持续保留；任务结束后自动保存状态并释放计算资源。
+            环境，归属当前账号。用云电脑里的“业务浏览器”登录一次，登录态会自动同步给本账号的其他员工；窗口、文件和软件各自独立。空闲时自动休眠。
           </p>
         </div>
       </div>
@@ -131,6 +136,19 @@ export function CloudDesktops({ onRecordingCreated }: Props) {
                       : labels[row.state] || "状态待确认"}{" "}
                     · {row.vcpus} 核 / {row.memory_mib / 1024} GB · 持久环境
                   </p>
+                  {row.browser_sync && (
+                    <p className="auto-muted" role="status">
+                      {row.state === "saved" || row.state === "stopped"
+                        ? "恢复后自动同步本账号登录态"
+                        : row.browser_sync.status === "synced"
+                          ? "本账号登录态已同步"
+                          : row.browser_sync.status === "error"
+                            ? "登录态同步暂未完成，请保持业务浏览器打开"
+                            : row.browser_sync.status === "syncing"
+                              ? "正在同步本账号登录态…"
+                              : "打开业务浏览器后自动同步登录态"}
+                    </p>
+                  )}
                   {row.last_error && <p role="alert">{row.last_error}</p>}
                 </div>
                 <div className="auto-row" style={{ flexWrap: "wrap" }}>
