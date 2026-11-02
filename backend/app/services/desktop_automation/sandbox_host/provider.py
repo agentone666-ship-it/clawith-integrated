@@ -178,7 +178,9 @@ class Libvirt:
     def start(self, ident: str) -> None:
         self.provision(ident)
         if self.state(ident) == "shut off":
-            self.virsh(ident, "start", timeout=90)
+            # Cold compressed snapshots can take minutes on a contended host.
+            # Keep the desktop in restoring state while libvirt finishes.
+            self.virsh(ident, "start", timeout=600)
         elif self.state(ident) != "running":
             raise ProviderError("Windows has an unexpected provider state; operator reconciliation required")
 
