@@ -291,7 +291,7 @@ New-Item -ItemType Directory -Path $browserProfile -Force | Out-Null
 $shell=New-Object -ComObject WScript.Shell
 foreach($folder in @('C:\Users\Clawith\Desktop','C:\Users\Clawith\AppData\Roaming\Microsoft\Windows\Start Menu\Programs')) {
  New-Item -ItemType Directory -Path $folder -Force | Out-Null
- foreach($name in @('业务浏览器','Microsoft Edge')) {
+ foreach($name in @('Business Browser','Microsoft Edge')) {
   $link=$shell.CreateShortcut("$folder\$name.lnk")
   $link.TargetPath='C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
   $link.Arguments='--user-data-dir="C:\Users\Clawith\AppData\Local\Clawith\BusinessBrowser" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-first-run'
@@ -444,7 +444,7 @@ if ($LASTEXITCODE -ne 0) {{throw 'Interactive shell initialization did not launc
                 with httpx.Client(trust_env=False, timeout=httpx.Timeout(45, connect=2)) as client:
                     response = client.get("http://" + ip + ":8090/health", timeout=2)
                     if response.status_code == 200 and response.json().get("ready"):
-                        if response.json().get("browser_sync_protocol") != 1:
+                        if response.json().get("browser_sync_protocol") != 2:
                             self.upgrade_browser(ident)
                             continue
                         # Prove an interactive screenshot exists before admitting inputs.

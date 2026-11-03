@@ -241,27 +241,7 @@ async def test_recording_frame_uses_current_console_capture_without_native_snaps
     assert result["structuredContent"]["recording_protocol"] == 2
 
 
-def test_edge_launch_from_any_tool_uses_this_vm_business_profile_and_loopback_debugger():
-    tree = ast.parse(ASSET.read_text())
-    function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "business_browser_params")
-    namespace = {}
-    exec(compile(ast.Module(body=[function], type_ignores=[]), str(ASSET), "exec"), namespace)  # noqa: S102 -- Pinned pure argument resolver.
-    resolve = namespace["business_browser_params"]
-    params = {
-        "path": r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-        "additional_arguments": [
-            "https://business.example",
-            "--user-data-dir",
-            "someone-else",
-            "--remote-debugging-port=1111",
-            "--remote-allow-origins=*",
-        ],
-    }
-    result = resolve(params)
-    assert result["path"] == params["path"]
-    assert result["additional_arguments"][0] == "https://business.example"
-    assert "--remote-debugging-port=9222" in result["additional_arguments"]
-    assert not any("someone-else" in a or "1111" in a or "allow-origins" in a for a in result["additional_arguments"])
-    assert resolve({"path": "notepad.exe"}) == {"path": "notepad.exe"}
-    with pytest.raises(ValueError, match="no action"):
-        resolve({"path": "msedge.exe", "additional_arguments": "unvalidated"})
+def test_native_launch_does_not_inject_remote_debugging_flags():
+    source = ASSET.read_text()
+    assert "business_browser_params" not in source
+    assert "--remote-debugging-port=" not in source

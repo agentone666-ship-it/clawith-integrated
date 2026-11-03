@@ -28,27 +28,6 @@ SAFE = {'list_apps','list_windows','get_window_state','get_desktop_state',
 READS = {'list_apps','list_windows','get_window_state','get_desktop_state',
          'get_accessibility_tree','get_screen_size'}
 
-def business_browser_params(params):
-    """Route Edge launches from all Tool consumers to this VM's managed profile."""
-    path=params.get('path')
-    if not isinstance(path,str) or path.replace('\\','/').rsplit('/',1)[-1].lower()!='msedge.exe':
-        return params
-    arguments=params.get('additional_arguments',[])
-    if not isinstance(arguments,list) or len(arguments)>64 or any(not isinstance(v,str) for v in arguments):
-        raise ValueError('Invalid browser arguments; no action was dispatched')
-    owned={'--user-data-dir','--remote-debugging-port','--remote-debugging-address','--remote-allow-origins'}
-    kept=[];skip=False
-    for arg in arguments:
-        if skip:skip=False;continue
-        name=arg.split('=',1)[0]
-        if name in owned:
-            skip='='not in arg
-        else:kept.append(arg)
-    return {**params,'additional_arguments':kept+[
-        '--user-data-dir=C:/Users/Clawith/AppData/Local/Clawith/BusinessBrowser',
-        '--remote-debugging-address=127.0.0.1','--remote-debugging-port=9222','--no-first-run']}
-
-
 def compact_schema(value):
     """Keep native parameter constraints while bounding repeated prose."""
     if isinstance(value,dict):
@@ -276,7 +255,6 @@ class Driver:
         action=args.get('action'); params=args.get('params',{})
         if not isinstance(params,dict): raise ValueError('params must be an object')
         params=dict(params)
-        if action=='launch_app':params=business_browser_params(params)
         if action=='help':
             name=params.get('name')
             if name and name not in self.tools: raise ValueError('Unknown action schema')
@@ -394,7 +372,7 @@ app=FastAPI(lifespan=lifespan)
 @app.get('/health')
 async def health():
     return {'ready':bool(driver.tools) and driver.proc.returncode is None,
-        'browser_sync_protocol':1,'recording_protocol':2,'recording_input_backend':'win32_send_input','driver':'0.37.0','platform':os.name,'model_calls':0,'tools':sorted(driver.tools)}
+        'browser_sync_protocol':2,'recording_protocol':2,'recording_input_backend':'win32_send_input','driver':'0.37.0','platform':os.name,'model_calls':0,'tools':sorted(driver.tools)}
 
 @app.get('/browser/snapshot')
 async def browser_snapshot(req:Request):
@@ -441,7 +419,7 @@ async def mcp(req:Request):
     try:
         if method=='initialize':result={'protocolVersion':'2025-03-26','capabilities':{'tools':{}},'serverInfo':{'name':'clawith-cua-driver-atomic','version':'1'}}
         elif method=='tools/list':result={'tools':[{'name':'computer','description':
-            'Direct model-free Cua Driver control of an isolated Windows VM desktop. Runtime automatically binds and releases task sessions: do not supply session_id or params.session. First read get_desktop_state/list_apps; use help params={name:ACTION} for exact params. Writes need request_id. For shared business login use the Business Browser (业务浏览器) desktop/Start shortcut; use list_apps to discover its exact name before launch_app. Read state after writes; release when finished. No child model calls; never controls the user Mac.',
+            'Direct model-free Cua Driver control of an isolated Windows VM desktop. Runtime automatically binds and releases task sessions: do not supply session_id or params.session. First read get_desktop_state/list_apps; use help params={name:ACTION} for exact params. Writes need request_id. Use list_apps to discover installed browser applications before launch_app. Read state after writes; release when finished. No child model calls; never controls the user Mac.',
             'inputSchema':SCHEMA}]}
         elif method=='tools/call':
             p=body.get('params',{})

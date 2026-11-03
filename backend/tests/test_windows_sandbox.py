@@ -382,7 +382,7 @@ def test_readiness_uses_normal_capture_budget_and_keeps_one_session_across_timeo
             pass
 
         def get(self, *args, **kwargs):
-            return httpx.Response(200, json={"ready": True, "browser_sync_protocol": 1})
+            return httpx.Response(200, json={"ready": True, "browser_sync_protocol": 2})
 
         def post(self, url, *, headers, json):
             args = json["params"]["arguments"]
@@ -565,9 +565,20 @@ async def test_old_ready_guest_upgrades_before_use_and_flushes_login_state_befor
     monkeypatch.setattr(m.provider, "ready", ready)
     m.browser_sync = SimpleNamespace(synchronize=synchronize)
     await m.ensure(ident)
-    assert events == ["guest_ready", "sync"] and m.row(ident)["browser_protocol"] == 1
+    assert events == ["guest_ready", "sync"] and m.row(ident)["browser_protocol"] == 2
     await m.ensure(ident)
     assert events == ["guest_ready", "sync"]
     await m.suspend(ident)
     assert events == ["guest_ready", "sync", "sync"]
     assert m.row(ident)["state"] == "saved" and ident not in m.provider.running
+
+
+def test_managed_browser_shortcuts_use_locale_independent_filenames(tmp_path, monkeypatch):
+    from app.services.desktop_automation.sandbox_host.provider import Libvirt
+
+    p = Libvirt(tmp_path, tmp_path / "template")
+    commands = []
+    monkeypatch.setattr(p, "powershell", lambda ident, source: commands.append(source))
+    p.configure_browser(str(uuid.uuid4()))
+    assert "@('Business Browser','Microsoft Edge')" in commands[0]
+    assert "@('业务浏览器'" not in commands[0]

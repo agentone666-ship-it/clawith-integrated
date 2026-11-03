@@ -1173,10 +1173,10 @@ logs. Inventory exposes only status, sync timestamp and conflict count.
 The interactive guest bridge imports the shipped `browser_guest.py` and exposes
 only authenticated `/browser/snapshot` and `/browser/apply`, using the existing
 per-desktop secret. It never exposes arbitrary CDP. The adapter connects only to
-Edge's guest-loopback debugger. Desktop/Start shortcuts “业务浏览器” and Microsoft
-Edge target the dedicated per-VM `BusinessBrowser` profile. Guest `launch_app`
-also resolves msedge.exe arguments to that profile for Computer Use/RPA/Python
-consumers, preserving URLs while replacing caller profile/debug overrides. Debugging is bound
+Edge's guest-loopback debugger. Desktop/Start shortcuts “Business Browser” and Microsoft
+Edge target the dedicated per-VM `BusinessBrowser` profile. Guest `launch_app` retains native Cua arguments: its guard prohibits remote-debugging
+flag injection. The named-profile preparation adapter is still pending. The
+provisioned shortcut's debugging address is bound
 to127.0.0.1. Old/default profiles remain intact; their DPAPI databases are not
 copied. Existing users log in once in this browser. Guest setup requires the
 pinned websockets15.0.1 package; host setup requires cryptography. These do not
@@ -1224,5 +1224,22 @@ LocalStorage, refresh/logout/relogin, a real browser restart, lost receipts and
 cross-account isolation. Run from backend with
 `CLAWITH_TEST_BROWSER=/path/to/chromium .venv/bin/python -m pytest -q tests/test_browser_state_integration.py`.
 This proves local Chromium protocol behavior; server deployment and real Windows
-Edge acceptance remain separate evidence. As of this change, access to the dev
-server was interrupted before installation, so no live deployment is claimed.
+Edge acceptance remain separate evidence. The initial release was locally
+verified while the dev server was unreachable. On reconnect the host service and
+frontend were installed with a private backup and no main Runtime restart;
+real Windows acceptance is tracked separately in the deployment artifacts.
+
+Windows acceptance found that WScript shortcut saving failed for a Chinese-only
+filename under the guest image locale. Use the ASCII `Business Browser.lnk`
+filename and explain it as 业务浏览器 in the UI; no locale/password reset is needed.
+
+
+Live Windows acceptance remains blocked at browser startup: native Cua0.37
+rejects remote-debugging flags in `launch_app` with an explicit `browser_prepare`
+requirement. Remove the earlier argument injection; ordinary Agent launches must
+retain their existing native behavior. The account vault/guest sync adapter are
+installed, but cross-Agent login sharing is not accepted or advertised as usable.
+Next integration must use Cua's persistent `isolated_named` preparation and proven
+owned endpoint rather than inventing a flag/shortcut bypass. All test VMs and
+leases are released. Windows tests have not proved shared login, rotation or
+cross-account isolation; local Chromium evidence remains separate.
