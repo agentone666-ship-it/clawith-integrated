@@ -240,7 +240,17 @@ external input. See the desktop automation note for scope and acceptance.
 Account browser state belongs to `desktop_automation/sandbox_host/browser_state.py`:
 key canonical state by verified tenant/account; keep VM/browser processes keyed
 by Agent. `browser_sync.py` owns per-account merge/apply transactions independently
-of pointer input. Guest broker endpoints expose only bounded snapshot/apply,
-never arbitrary CDP. No raw authentication state may enter Runtime, model-visible
+of pointer input. Private guest routes expose bounded snapshot/apply, browser lifecycle and
+receipt-fenced foreground navigation, never arbitrary CDP. No raw authentication state may enter Runtime, model-visible
 Tool results, inventory, logs or test artifacts. See the owning desktop note for
 restart, logout, encryption, scope and pending-apply semantics.
+
+The persistent business browser is owned by `sandbox_host/business_browser.py`
+through Playwright's supported persistent-context API and private pipe. Cua
+continues to own desktop input and screenshots. Use only the dedicated existing
+business profile; never attach default profiles or arbitrary debugging endpoints.
+`browser_guest.py` borrows that owned context for bounded storage operations.
+URL navigation waits for verified account synchronization and retains the original
+live-task receipt; background synchronization must never dispatch a Run URL.
+Preserve the existing interactive controller privileges. Windows shortcuts use
+the private local broker route without exposing profile or account selectors.

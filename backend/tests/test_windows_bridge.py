@@ -245,3 +245,88 @@ def test_native_launch_does_not_inject_remote_debugging_flags():
     source = ASSET.read_text()
     assert "business_browser_params" not in source
     assert "--remote-debugging-port=" not in source
+
+
+async def test_business_navigation_requires_live_task_and_replays_only_confirmed_receipt(bridge):
+    from types import SimpleNamespace
+
+    driver, state = bridge
+    calls = []
+
+    async def call(method, params):
+        calls.append((method, params))
+        return {"targetId": "fixture"}
+
+    driver.navigate_business.__func__.__globals__["browser"] = SimpleNamespace(lock=asyncio.Lock())
+
+    async def navigate(urls):
+        for url in urls:
+            await call("Target.createTarget", {"url": url})
+
+    driver.navigate_business.__func__.__globals__["business_browser"] = SimpleNamespace(navigate=navigate)
+    receipt = state / "calls/record_authorized-browser_fixture.json"
+    receipt.write_text(json.dumps({"browser_urls": ["https://business.example"]}))
+    assert await driver.navigate_business("record_authorized", "browser_fixture") == {"ok": True}
+    assert await driver.navigate_business("record_authorized", "browser_fixture") == {"ok": True}
+    assert len(calls) == 1
+    driver.owner = None
+    with pytest.raises(ValueError, match="no longer active"):
+        await driver.navigate_business("record_authorized", "browser_fixture")
+    assert len(calls) == 1
+
+
+async def test_uncertain_business_navigation_is_never_replayed(bridge):
+    from types import SimpleNamespace
+
+    driver, state = bridge
+    calls = []
+
+    async def call(method, params):
+        calls.append(method)
+        raise TimeoutError
+
+    driver.navigate_business.__func__.__globals__["browser"] = SimpleNamespace(lock=asyncio.Lock())
+
+    async def navigate(urls):
+        for url in urls:
+            await call("Target.createTarget", {"url": url})
+
+    driver.navigate_business.__func__.__globals__["business_browser"] = SimpleNamespace(navigate=navigate)
+    receipt = state / "calls/record_authorized-browser_fixture.json"
+    receipt.write_text(json.dumps({"browser_urls": ["https://business.example"]}))
+    with pytest.raises(TimeoutError):
+        await driver.navigate_business("record_authorized", "browser_fixture")
+    with pytest.raises(ValueError, match="unknown"):
+        await driver.navigate_business("record_authorized", "browser_fixture")
+    assert len(calls) == 1
+
+
+async def test_native_request_deadline_includes_pipe_backpressure(bridge):
+    driver, _ = bridge
+    never = asyncio.Event()
+
+    async def blocked_send(body):
+        await never.wait()
+
+    driver.send = blocked_send
+    with pytest.raises(TimeoutError):
+        await driver.request("ping", {}, timeout=0.02)
+    assert not driver.pending
+
+
+async def test_cancelled_navigation_releases_task_lock_and_fences_the_receipt(bridge):
+    from types import SimpleNamespace
+
+    driver, state = bridge
+    browser_lock = asyncio.Lock()
+    await browser_lock.acquire()
+    driver.navigate_business.__func__.__globals__["browser"] = SimpleNamespace(lock=browser_lock)
+    receipt = state / "calls/record_authorized-browser_fixture.json"
+    receipt.write_text(json.dumps({"browser_urls": ["https://business.example"]}))
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.02):
+            await driver.navigate_business("record_authorized", "browser_fixture")
+    assert not driver.lock.locked()
+    browser_lock.release()
+    with pytest.raises(ValueError, match="unknown"):
+        await driver.navigate_business("record_authorized", "browser_fixture")

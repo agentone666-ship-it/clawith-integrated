@@ -54,7 +54,9 @@ class BrowserSync:
             return
         async with self.accounts.setdefault((row["tenant"], row["owner"]), asyncio.Lock()):
             try:
-                result = await self.request(row, "snapshot")
+                canonical = self.vault.state(row)[0]
+                hints = sorted({json.loads(k[2:])[0] for k in canonical if k.startswith("l:")})
+                result = await self.request(row, "snapshot", {"origins": hints})
                 if not result.get("connected"):
                     self.vault.status(ident, "waiting")
                     return

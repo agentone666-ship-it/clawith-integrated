@@ -16,6 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import uvicorn
 from browser_guest import Browser
+from business_browser import BusinessBrowser
 
 browser=Browser()
 
@@ -194,6 +195,7 @@ class Driver:
         self.owner = None
         self.owner_context = None
         self.expires = 0
+        self.navigation_stage = "idle"
 
     async def start(self):
         self.log = Path('C:/Clawith/out/driver.log').open('ab')
@@ -221,8 +223,9 @@ class Driver:
         future = asyncio.get_running_loop().create_future()
         self.pending[ident] = future
         try:
-            await self.send({'jsonrpc':'2.0','id':ident,'method':method,'params':params})
-            return await asyncio.wait_for(future, timeout)
+            async with asyncio.timeout(timeout):
+                await self.send({'jsonrpc':'2.0','id':ident,'method':method,'params':params})
+                return await future
         finally:
             self.pending.pop(ident,None)
 
@@ -248,6 +251,34 @@ class Driver:
             self.reader.cancel()
             await asyncio.gather(self.reader,return_exceptions=True)
         if getattr(self,'log',None): self.log.close()
+
+    async def navigate_business(self, sid, ident):
+        if not isinstance(sid,str) or not re.fullmatch('[a-zA-Z0-9_-]{6,80}',sid):
+            raise ValueError('Invalid browser task')
+        if not isinstance(ident,str) or not re.fullmatch('[a-zA-Z0-9_-]{6,80}',ident):
+            raise ValueError('Invalid browser receipt')
+        self.navigation_stage="task_lock"
+        async with self.lock:
+            self.navigation_stage="receipt"
+            if self.owner!=sid or time.monotonic()>=self.expires or (STATE/'closed'/sid).exists():
+                raise ValueError('Browser task is no longer active; no navigation was dispatched')
+            receipt=STATE/'calls'/f'{sid}-{ident}.json'
+            if not receipt.exists():raise ValueError('Browser preparation receipt is missing')
+            saved=json.loads(receipt.read_text(encoding='utf-8'))
+            if 'browser_urls' not in saved:raise ValueError('Not a prepared browser action')
+            if 'navigation' in saved:
+                if saved['navigation']=='completed':return {'ok':True}
+                raise ValueError('Prior navigation outcome is unknown; inspect desktop before continuing')
+            saved['navigation']='dispatched'
+            receipt.write_text(json.dumps(saved,ensure_ascii=False),encoding='utf-8')
+            self.navigation_stage='browser_lock'
+            async with browser.lock:
+                self.navigation_stage='url_open'
+                await business_browser.navigate(saved['browser_urls'])
+            self.navigation_stage='receipt_complete'
+            saved['navigation']='completed'
+            receipt.write_text(json.dumps(saved,ensure_ascii=False),encoding='utf-8')
+            return {'ok':True}
 
     async def call(self, args, runtime=None):
         if not isinstance(args,dict) or set(args)-{'action','params','session_id','request_id'}:
@@ -330,6 +361,9 @@ class Driver:
                 if runtime is None and re.fullmatch('record_[a-f0-9]{32}',sid) and action in {'get_desktop_state','list_windows'}:
                     result=recording_desktop() if action=='get_desktop_state' else recording_windows()
                     response={'result':result}
+                elif action=='launch_app' and str(params.get('path','')).replace('\\','/').rsplit('/',1)[-1].lower()=='msedge.exe':
+                    result=await business_browser.prepare(params.get('additional_arguments',[]))
+                    response={'result':result}
                 elif manual:
                     result=recording_input(action,params)
                     response={'result':result}
@@ -339,7 +373,7 @@ class Driver:
                 if not isinstance(result,dict):
                     raise RuntimeError('Driver returned invalid result: '+str(response.get('error',{}))[:400])
             except (TimeoutError,RuntimeError) as exc:
-                result={'isError':True,'content':[{'type':'text','text':f'Unknown action outcome ({type(exc).__name__}); inspect desktop before retrying. No automatic replay.'}]}
+                result={'isError':True,'content':[{'type':'text','text':(str(exc) if action=='launch_app' and 'Business browser preparation failed at' in str(exc) else f'Unknown action outcome ({type(exc).__name__}); inspect desktop before retrying. No automatic replay.')}]}
             if action in READS and not result.get('isError'):
                 result.setdefault('structuredContent',{})['recording_input_backend']='win32_send_input'
                 result['structuredContent']['recording_protocol']=2
@@ -348,7 +382,10 @@ class Driver:
                 log.write(json.dumps({'action':action,'session_id':sid,'request_id':ident,
                     'seconds':elapsed,'isError':bool(result.get('isError'))})+'\n')
             if receipt:
-                receipt.write_text(json.dumps({'fingerprint':fingerprint,'status':'returned','result':result},ensure_ascii=False),encoding='utf-8');receipt.chmod(0o600)
+                saved={'fingerprint':fingerprint,'status':'returned','result':result}
+                if result.get('structuredContent',{}).get('business_browser_prepared'):
+                    saved['browser_urls']=params.get('additional_arguments',[])
+                receipt.write_text(json.dumps(saved,ensure_ascii=False),encoding='utf-8');receipt.chmod(0o600)
             self.expires=time.monotonic()+300
             if not write and result.get('isError') and prior_owner!=sid:
                 self.owner=None;self.owner_context=None
@@ -356,33 +393,75 @@ class Driver:
 
 
 driver=Driver()
+business_browser=BusinessBrowser(browser)
 
 @asynccontextmanager
 async def lifespan(app):
     (STATE/'calls').mkdir(parents=True,exist_ok=True)
     (STATE/'closed').mkdir(parents=True,exist_ok=True)
-    await driver.start()
-    await browser.start()
-    yield
-    await browser.stop()
-    await driver.stop()
+    try:
+        await driver.start()
+        yield
+    finally:
+        try:
+            await business_browser.stop()
+        finally:
+            await driver.stop()
 
 app=FastAPI(lifespan=lifespan)
 
 @app.get('/health')
 async def health():
     return {'ready':bool(driver.tools) and driver.proc.returncode is None,
-        'browser_sync_protocol':2,'recording_protocol':2,'recording_input_backend':'win32_send_input','driver':'0.37.0','platform':os.name,'model_calls':0,'tools':sorted(driver.tools)}
+        'browser_sync_protocol':20,'browser_navigation_stage':driver.navigation_stage,'business_browser_stage':business_browser.stage,'browser_connected':browser.connected,'recording_protocol':2,'recording_input_backend':'win32_send_input','driver':'0.37.0','platform':os.name,'model_calls':0,'tools':sorted(driver.tools)}
+
+@app.post('/browser/close')
+async def browser_close(req:Request):
+    if not secrets.compare_digest(req.headers.get('authorization',''),'Bearer '+TOKEN):
+        return JSONResponse({'error':'Unauthorized'},status_code=401)
+    await business_browser.stop()
+    return {'ok':True}
+
+@app.post('/browser/open')
+async def browser_open(req:Request):
+    if not secrets.compare_digest(req.headers.get('authorization',''),'Bearer '+TOKEN):
+        return JSONResponse({'error':'Unauthorized'},status_code=401)
+    return await business_browser.prepare()
+
+@app.post('/browser/navigate')
+async def browser_navigate(req:Request):
+    if not secrets.compare_digest(req.headers.get('authorization',''),'Bearer '+TOKEN):
+        return JSONResponse({'error':'Unauthorized'},status_code=401)
+    raw=await req.body()
+    if len(raw)>4096:return JSONResponse({'error':'Request too large'},status_code=413)
+    try:
+        body=json.loads(raw)
+        async with asyncio.timeout(35):
+            return await driver.navigate_business(body.get('session'),body.get('request_id'))
+    except (ValueError,RuntimeError,TimeoutError) as exc:
+        detail=str(exc)[:200] or type(exc).__name__
+        Path('C:/Clawith/private/browser-navigation-error.json').write_text(json.dumps({'stage':driver.navigation_stage,'error':detail}))
+        return JSONResponse({'error':detail},status_code=409)
 
 @app.get('/browser/snapshot')
+@app.post('/browser/snapshot')
 async def browser_snapshot(req:Request):
     if not secrets.compare_digest(req.headers.get('authorization',''),'Bearer '+TOKEN):
         return JSONResponse({'error':'Unauthorized'},status_code=401)
-    async with browser.lock:
-        try:
-            async with asyncio.timeout(10):return await browser.snapshot()
-        except (RuntimeError,TimeoutError,KeyError):
-            return JSONResponse({'error':'Business browser state is not ready'},status_code=409)
+    hints=[]
+    if req.method=='POST':
+        raw=await req.body()
+        if len(raw)>2*1024*1024:return JSONResponse({'error':'Request too large'},status_code=413)
+        try:body=json.loads(raw)
+        except ValueError:return JSONResponse({'error':'Invalid origin hints'},status_code=400)
+        if not isinstance(body,dict) or set(body)!={'origins'} or not isinstance(body['origins'],list) or len(body['origins'])>128:
+            return JSONResponse({'error':'Invalid origin hints'},status_code=400)
+        hints=body['origins']
+    try:
+        async with asyncio.timeout(10):
+            async with browser.lock:return await browser.snapshot(hints)
+    except (RuntimeError,TimeoutError,KeyError) as exc:
+        return JSONResponse({'error':str(exc)[:200] or type(exc).__name__},status_code=409)
 
 @app.post('/browser/apply')
 async def browser_apply(req:Request):
@@ -396,11 +475,11 @@ async def browser_apply(req:Request):
     except ValueError:return JSONResponse({'error':'Invalid browser state'},status_code=400)
     if not isinstance(body,dict) or set(body)!={'state','expected'} or not isinstance(body['state'],dict):
         return JSONResponse({'error':'Invalid browser state'},status_code=400)
-    async with browser.lock:
-        try:
-            async with asyncio.timeout(10):return await browser.apply(body['state'],body['expected'])
-        except (RuntimeError,TimeoutError,KeyError):
-            return JSONResponse({'error':'Business browser synchronization is unconfirmed'},status_code=409)
+    try:
+        async with asyncio.timeout(10):
+            async with browser.lock:return await browser.apply(body['state'],body['expected'])
+    except (RuntimeError,TimeoutError,KeyError) as exc:
+        return JSONResponse({'error':str(exc)[:200] or type(exc).__name__},status_code=409)
 
 SCHEMA={'type':'object','properties':{
  'action':{'type':'string','enum':sorted(SAFE|{'help','release'})},
@@ -440,6 +519,8 @@ async def mcp(req:Request):
         elif method not in {'notifications/initialized','ping'}:raise ValueError('Unsupported MCP method')
     except ValueError as exc:
         result={'isError':True,'content':[{'type':'text','text':str(exc)}]}
+    except (RuntimeError,TimeoutError):
+        result={'isError':True,'content':[{'type':'text','text':'Desktop control did not complete. Inspect the cloud desktop before retrying; do not replay an uncertain action.'}]}
     return {'jsonrpc':'2.0','id':ident,'result':result}
 
 if __name__=='__main__':uvicorn.run(app,host='0.0.0.0',port=8090)

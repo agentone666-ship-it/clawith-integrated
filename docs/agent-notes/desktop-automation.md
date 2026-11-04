@@ -1170,17 +1170,16 @@ key with the private database, never include it in artifacts or Runtime config.
 No cookie/token values are returned to inventory, Runtime, models, tracing or
 logs. Inventory exposes only status, sync timestamp and conflict count.
 
-The interactive guest bridge imports the shipped `browser_guest.py` and exposes
-only authenticated `/browser/snapshot` and `/browser/apply`, using the existing
-per-desktop secret. It never exposes arbitrary CDP. The adapter connects only to
-Edge's guest-loopback debugger. Desktop/Start shortcuts “Business Browser” and Microsoft
-Edge target the dedicated per-VM `BusinessBrowser` profile. Guest `launch_app` retains native Cua arguments: its guard prohibits remote-debugging
-flag injection. The named-profile preparation adapter is still pending. The
-provisioned shortcut's debugging address is bound
-to127.0.0.1. Old/default profiles remain intact; their DPAPI databases are not
-copied. Existing users log in once in this browser. Guest setup requires the
-pinned websockets15.0.1 package; host setup requires cryptography. These do not
-change the model or introduce a GUI agent runtime.
+The interactive guest bridge imports `browser_guest.py` and borrows only the
+Playwright-owned business browser context over its private pipe. The authenticated private guest
+routes provide bounded snapshot/apply, browser preparation/maintenance and
+receipt-fenced URL navigation; they expose no arbitrary CDP, profile or account
+selector. Desktop/Start shortcuts “Business Browser” and Microsoft Edge invoke
+the local launcher. Existing/default browser profiles remain intact and their
+DPAPI databases are never copied. Users log in once in Business Browser.
+Guest setup pins Playwright1.64.1 and uses installed Edge without downloading
+another browser; host setup requires cryptography.
+These do not introduce another model or GUI Agent runtime.
 
 **Reconciliation and lifecycle.** Host polling checks ready desktops every three
 seconds after the preceding pass (eventual synchronization, not a three-second
@@ -1208,7 +1207,8 @@ This preserves logout implementations that clear storage and redirect at once.
 No recording or desktop input lease is claimed by browser synchronization.
 
 Bounds:2MiB serialized snapshot/canonical state,4096 items including tombstones,
-128 observed origins,64 attached targets,128 pending CDP requests,10-second guest
+128 observed origins, one temporary hidden target per serialized operation,
+bounded pending CDP requests,10-second guest
 operation deadlines plus bounded hidden-target cleanup, bounded host responses, at most10 ready rows per poll.
 Overflow or an unknown write outcome leaves visible error/pending state; no
 truncation or unconditional account overwrite. Single-use refresh-token rotation,
@@ -1234,12 +1234,75 @@ filename under the guest image locale. Use the ASCII `Business Browser.lnk`
 filename and explain it as 业务浏览器 in the UI; no locale/password reset is needed.
 
 
-Live Windows acceptance remains blocked at browser startup: native Cua0.37
-rejects remote-debugging flags in `launch_app` with an explicit `browser_prepare`
-requirement. Remove the earlier argument injection; ordinary Agent launches must
-retain their existing native behavior. The account vault/guest sync adapter are
-installed, but cross-Agent login sharing is not accepted or advertised as usable.
-Next integration must use Cua's persistent `isolated_named` preparation and proven
-owned endpoint rather than inventing a flag/shortcut bypass. All test VMs and
-leases are released. Windows tests have not proved shared login, rotation or
-cross-account isolation; local Chromium evidence remains separate.
+### Business-browser ownership (2026-11-03)
+
+`business_browser.BusinessBrowser` owns visible Edge using Playwright1.64.1's
+supported `launch_persistent_context` and private pipe. Cua Driver retains desktop
+screenshots/input and the existing Runtime remains the model/scheduler owner.
+The fixed business profile `clawith-business-v1` is Agent-private and reuses the
+existing dedicated directory, preserving saved browser data. No default profile
+or arbitrary debugging endpoint is attached, no debug flags pass through Cua,
+and Chromium sandboxing remains enabled. Native Cua browser preparation produced
+intermittent startup/resume failures during Windows acceptance; it is no longer
+the browser lifecycle owner. This is a transport correction, not an autonomous
+GUI Agent or additional model.
+
+The broker lazily starts the Playwright API on a business-browser request, so
+browser initialization failure cannot disable ordinary desktop control. The
+broker owns the API process and persistent context. Shutdown and
+maintenance detach the borrowed CDP session, close the owned browser context and
+stop Playwright. VM save pauses these processes with Windows, preserving RAM and
+releasing compute. Agent operation release leaves the persistent browser alive.
+The controller retains its existing Highest interactive task privilege so this
+change preserves elevated legacy-application control. Existing Windows identity,
+password, default profiles and unrelated applications remain intact.
+
+Only up to8 HTTP(S)/about:blank URL arguments are accepted. The guest stores them
+with the original task's write receipt. After the host verifies account state,
+the foreground caller explicitly completes navigation against that receipt while
+the original task remains active. Receipt state is committed before dispatch;
+unknown outcomes cannot be replayed, and background synchronization never opens
+URLs left by a cancelled Run. Private completion markers and account state never
+enter model-visible results. Shortcuts open the same managed browser; periodic
+synchronization applies the account state without user configuration.
+
+Snapshots collect HTTP(S) origins from owned-context pages/frames and canonical
+origin hints supplied only by the authenticated host. Each snapshot reads actual
+origin databases through one temporary request-intercepted empty document.
+All requests are fulfilled locally, bypass service workers and disable caching;
+no business requests or app scripts run. Hidden targets close in `finally`,
+including failure/cancellation, and tests independently inspect their absence.
+Unknown target-creation outcomes detach the owned root session. Frozen/error
+business tabs do not block these reads. Failed actual reads leave synchronization
+pending/error instead of publishing cached authentication. Host-only Cookie scope
+is preserved using the CDP URL form. Logout updates origin storage once, without
+persistent scripts that could resurrect credentials.
+
+Browser/desktop transport deadlines cover sending and waiting for replies. Whole
+foreground navigation, including lock acquisition, is bounded by35seconds.
+Cancellation releases the task lock while keeping dispatched receipts fenced.
+Preparation is bounded by110seconds. Guest upgrade happens once per readiness
+attempt, with a fresh180-second replacement phase inside360seconds total.
+Playwright installation is pinned and serialized using a guest-local mutex;
+readiness polls cannot reinstall it repeatedly. Upload chunks are8192bytes with
+regression coverage for complete PowerShell command lines below Windows32KiB.
+
+Verification covers three actual headless Chromium persistent contexts through
+the shipped guest routes and host coordinator, independent website receipts,
+login/rotation/logout/restart/lost receipts/account isolation, hidden-target
+cleanup, transport backpressure, task receipt fencing, upgrade bounds and
+credential preservation. Local results and real Windows results are separate;
+the server acceptance artifact is
+`artifacts/account-login-sync-20261102/windows-proof.json`. The main Clawith
+Runtime/backend container is not restarted by this private-host rollout.
+
+Current deployment status: the private sandbox host and frontend are installed
+on the development server, with the main Runtime container unchanged. Focused
+local checks pass79 tests, Ruff and scoped Pyright. Windows acceptance is still
+pending: the first Windows Playwright API startup timed out, and protocol20 now
+starts it lazily to protect ordinary desktop availability. Guest dependencies
+were installed from official pinned wheels with SHA256 readback on the host;
+public-network installation was too slow for the first readiness window. A
+bounded server-owned test batch continues independently of the Mac/SSH session;
+it releases its leases, saves managed VMs and removes temporary fixture firewall
+rules in its finalizer. Deployment is not proof of cross-Agent Windows acceptance.

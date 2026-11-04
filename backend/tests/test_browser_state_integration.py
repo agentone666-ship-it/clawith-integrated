@@ -2,9 +2,9 @@
 
 import ast
 import asyncio
+import hashlib
 import json
 import os
-import subprocess
 import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,6 +16,9 @@ import httpx
 import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+
+pytest.importorskip("playwright.async_api")
+from playwright.async_api import async_playwright
 
 from app.services.desktop_automation.sandbox_host.browser_guest import Browser
 from app.services.desktop_automation.sandbox_host.browser_sync import BrowserSync
@@ -91,8 +94,9 @@ async def test_real_http_only_login_refresh_logout_cross_account_and_restart(tmp
     server = ThreadingHTTPServer(("127.0.0.1", 0), Site)
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
-    site = f"http://127.0.0.1:{server.server_port}"
-    processes, browsers = [], []
+    site = f"http://localhost:{server.server_port}"
+    contexts, browsers = [], []
+    api = await async_playwright().start()
     manager = Manager(tmp_path / "private.sqlite", SimpleNamespace(root=tmp_path))
     sync = BrowserSync(manager, tmp_path / "vault.key")
     manager.browser_sync = sync
@@ -102,27 +106,16 @@ async def test_real_http_only_login_refresh_logout_cross_account_and_restart(tmp
         tenant, owner = str(uuid.uuid4()), str(uuid.uuid4())
         for i in range(3):
             profile = tmp_path / f"profile-{i}"
-            process = await asyncio.create_subprocess_exec(
-                BINARY,
-                "--headless=new",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--remote-debugging-port=0",
-                "--user-data-dir=" + str(profile),
-                "about:blank",
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+            context = await api.chromium.launch_persistent_context(
+                str(profile),
+                executable_path=BINARY,
+                headless=True,
+                chromium_sandbox=True,
             )
-            processes.append(process)
-            for _ in range(100):
-                if (profile / "DevToolsActivePort").exists():
-                    break
-                await asyncio.sleep(0.1)
-            port = (profile / "DevToolsActivePort").read_text().splitlines()[0]
-            browser = Browser(f"http://127.0.0.1:{port}/json/version")
+            contexts.append(context)
+            browser = Browser()
             browsers.append(browser)
-            await browser.start()
-            await until(browser.snapshot, lambda v: v.get("connected"))
+            await browser.bind(context, hashlib.sha256(uuid.uuid4().bytes).hexdigest())
             ident = manager.create(
                 {"tenant_id": tenant, "owner_id": owner if i < 2 else str(uuid.uuid4()), "agent_id": str(uuid.uuid4())}
             )
@@ -133,7 +126,11 @@ async def test_real_http_only_login_refresh_logout_cross_account_and_restart(tmp
             guests[f"guest-{i}"] = httpx.ASGITransport(app=guest_app(browser, row["token"]))
 
         async def dispatch(request):
-            return await guests[request.url.host].handle_async_request(request)
+            response = await guests[request.url.host].handle_async_request(request)
+            if response.status_code != 200:
+                await response.aread()
+                print("GUEST_DIAGNOSTIC", request.url.path, response.json().get("error"))
+            return response
 
         monkeypatch.setattr(
             "app.services.desktop_automation.sandbox_host.browser_sync.httpx.AsyncClient",
@@ -141,28 +138,21 @@ async def test_real_http_only_login_refresh_logout_cross_account_and_restart(tmp
         )
 
         async def visit(browser, path):
-            created = await browser.call("Target.createTarget", {"url": site + path})
-            for _ in range(100):
-                for sid, state in list(browser.sessions.items()):
-                    if state.get("ready") and state.get("target") == created["targetId"]:
-                        frame = await browser.call("Page.getFrameTree", sid=sid)
-                        if frame["frameTree"]["frame"]["url"] == site + ("/signed-out" if path == "/logout" else path):
-                            result = await browser.call(
-                                "Runtime.evaluate",
-                                {
-                                    "expression": "JSON.stringify({cookie:document.getElementById('server')?.textContent,token:localStorage.getItem('access_token')})",
-                                    "returnByValue": True,
-                                },
-                                sid,
-                            )
-                            value = json.loads(result["result"]["value"])
-                            if value.get("cookie") is not None:
-                                return value
-                await asyncio.sleep(0.1)
-            raise AssertionError("Page was not loaded: " + created["targetId"])
+            page = await browser.context.new_page()
+            await page.goto(site + path)
+            if path == "/logout":
+                await page.wait_for_url(site + "/signed-out")
+            await page.locator("#server").wait_for(state="attached")
+            return {
+                "cookie": await page.locator("#server").text_content(),
+                "token": await page.local_storage.get_item("access_token"),
+            }
 
         async def synced(index):
+            before = {v["targetId"] for v in (await browsers[index].root_call("Target.getTargets"))["targetInfos"]}
             await sync.once(rows[index]["id"])
+            after = {v["targetId"] for v in (await browsers[index].root_call("Target.getTargets"))["targetInfos"]}
+            assert before == after, "Every temporary hidden storage target must be gone"
             if sync.vault.view(rows[index]["id"])["status"] != "synced":
                 observed = await browsers[index].snapshot()
                 desired, _, _ = sync.vault.state(rows[index])
@@ -171,30 +161,16 @@ async def test_real_http_only_login_refresh_logout_cross_account_and_restart(tmp
 
         async def restart(index, already_stopped=False):
             if not already_stopped:
-                await browsers[index].stop()
-                processes[index].terminate()
-                await asyncio.wait_for(processes[index].wait(), 10)
-            profile = tmp_path / f"profile-{index}"
-            (profile / "DevToolsActivePort").unlink(missing_ok=True)
-            processes[index] = await asyncio.create_subprocess_exec(
-                BINARY,
-                "--headless=new",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--remote-debugging-port=0",
-                "--user-data-dir=" + str(profile),
-                "about:blank",
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                await browsers[index].unbind()
+                await contexts[index].close()
+            contexts[index] = await api.chromium.launch_persistent_context(
+                str(tmp_path / f"profile-{index}"),
+                executable_path=BINARY,
+                headless=True,
+                chromium_sandbox=True,
             )
-            for _ in range(100):
-                if (profile / "DevToolsActivePort").exists():
-                    break
-                await asyncio.sleep(0.1)
-            port = (profile / "DevToolsActivePort").read_text().splitlines()[0]
-            browsers[index] = Browser(f"http://127.0.0.1:{port}/json/version")
-            await browsers[index].start()
-            await until(browsers[index].snapshot, lambda v: v.get("connected"))
+            browsers[index] = Browser()
+            await browsers[index].bind(contexts[index], hashlib.sha256(uuid.uuid4().bytes).hexdigest())
             guests[f"guest-{index}"] = httpx.ASGITransport(app=guest_app(browsers[index], rows[index]["token"]))
             return browsers[index]
 
@@ -212,9 +188,8 @@ async def test_real_http_only_login_refresh_logout_cross_account_and_restart(tmp
         assert await visit(b, "/private") == {"cookie": "sid=v2", "token": "token-v2"}
         # Peer B is offline when logout happens; its persisted LocalStorage must
         # be cleared before it visits the site again after restart.
-        await b.stop()
-        processes[1].terminate()
-        await asyncio.wait_for(processes[1].wait(), 10)
+        await b.unbind()
+        await contexts[1].close()
         await visit(a, "/logout")
         await synced(0)
         b = await restart(1, already_stopped=True)
@@ -271,10 +246,10 @@ async def test_real_http_only_login_refresh_logout_cross_account_and_restart(tmp
             Path(output).write_text(json.dumps(proof, indent=2))
     finally:
         for browser in browsers:
-            await browser.stop()
-        for process in processes:
-            process.terminate()
-            await asyncio.wait_for(process.wait(), 10)
+            await browser.unbind()
+        for context in contexts:
+            await context.close()
+        await api.stop()
         manager.db.close()
         server.shutdown()
         server.server_close()

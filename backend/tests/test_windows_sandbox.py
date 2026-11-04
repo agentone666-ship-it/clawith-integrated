@@ -382,7 +382,7 @@ def test_readiness_uses_normal_capture_budget_and_keeps_one_session_across_timeo
             pass
 
         def get(self, *args, **kwargs):
-            return httpx.Response(200, json={"ready": True, "browser_sync_protocol": 2})
+            return httpx.Response(200, json={"ready": True, "browser_sync_protocol": 20})
 
         def post(self, url, *, headers, json):
             args = json["params"]["arguments"]
@@ -565,7 +565,7 @@ async def test_old_ready_guest_upgrades_before_use_and_flushes_login_state_befor
     monkeypatch.setattr(m.provider, "ready", ready)
     m.browser_sync = SimpleNamespace(synchronize=synchronize)
     await m.ensure(ident)
-    assert events == ["guest_ready", "sync"] and m.row(ident)["browser_protocol"] == 2
+    assert events == ["guest_ready", "sync"] and m.row(ident)["browser_protocol"] == 20
     await m.ensure(ident)
     assert events == ["guest_ready", "sync"]
     await m.suspend(ident)
@@ -582,3 +582,120 @@ def test_managed_browser_shortcuts_use_locale_independent_filenames(tmp_path, mo
     p.configure_browser(str(uuid.uuid4()))
     assert "@('Business Browser','Microsoft Edge')" in commands[0]
     assert "@('业务浏览器'" not in commands[0]
+
+
+async def test_business_launch_synchronizes_before_receipt_fenced_navigation(manager, monkeypatch):
+    m, _ = manager
+    account = scope()
+    ident = m.create(account)
+    await m.ensure(ident)
+    events = []
+
+    async def synchronize(desktop):
+        assert desktop == ident
+        events.append("sync")
+
+    m.browser_sync = SimpleNamespace(
+        synchronize=synchronize, vault=SimpleNamespace(view=lambda _: {"status": "synced"})
+    )
+    m.db.execute("UPDATE desktops SET browser_protocol=20 WHERE id=?", (ident,))
+    real_client = httpx.AsyncClient
+
+    def respond(request):
+        if request.url.path == "/mcp":
+            events.append("prepare")
+            return httpx.Response(200, json={"result": {"structuredContent": {"business_browser_prepared": True}}})
+        assert request.url.path == "/browser/navigate"
+        assert json.loads(request.content) == {"session": "record_fixture", "request_id": "launch_fixture"}
+        events.append("navigate")
+        return httpx.Response(200, json={"ok": True})
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(respond)))
+    body = {
+        "params": {
+            "arguments": {"action": "launch_app", "session_id": "record_fixture", "request_id": "launch_fixture"}
+        }
+    }
+    result = await m.call(account, "record_fixture", "n" * 40, body)
+    assert events == ["prepare", "sync", "navigate"]
+    assert not result["result"]["structuredContent"]
+    assert result["result"]["content"] == [{"type": "text", "text": "Business browser opened."}]
+
+
+def test_controller_retains_existing_interactive_privileges(tmp_path, monkeypatch):
+    from app.services.desktop_automation.sandbox_host.provider import Libvirt
+
+    p = Libvirt(tmp_path, tmp_path / "template")
+    commands = []
+    monkeypatch.setattr(p, "ip", lambda _: "10.253.0.10")
+    monkeypatch.setattr(p, "upload_browser", lambda _: None)
+    monkeypatch.setattr(p, "upload_bridge", lambda _: None)
+    monkeypatch.setattr(p, "configure_browser", lambda _: None)
+    monkeypatch.setattr(p, "powershell", lambda _, source: commands.append(source))
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def post(self, *args, **kwargs):
+            return httpx.Response(200, json={"ok": True}, request=httpx.Request("POST", "http://guest/browser/close"))
+
+    monkeypatch.setattr(httpx, "Client", Client)
+    p.upgrade_browser(str(uuid.uuid4()), "test-only")
+    assert "-RunLevel Highest" in commands[-1]
+    assert "-RunLevel Limited" not in commands[-1]
+
+
+@pytest.mark.parametrize("replacement_ready", [True, False])
+def test_upgrade_gets_bounded_readiness_phase_without_reinstalling(tmp_path, monkeypatch, replacement_ready):
+    from app.services.desktop_automation.sandbox_host.provider import Libvirt
+
+    p = Libvirt(tmp_path, tmp_path / "template")
+    clock = [0.0]
+    upgrades = []
+    monkeypatch.setattr("time.monotonic", lambda: clock[0])
+    monkeypatch.setattr("time.sleep", lambda n: clock.__setitem__(0, clock[0] + n))
+    monkeypatch.setattr(p, "ip", lambda _: "10.253.0.10")
+
+    def install(*args):
+        upgrades.append(args)
+        clock[0] += 181  # Observed first upgrade outlives the former startup budget.
+
+    monkeypatch.setattr(p, "upgrade_browser", install)
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def get(self, *args, **kwargs):
+            return httpx.Response(
+                200, json={"ready": True, "browser_sync_protocol": 20 if upgrades and replacement_ready else 0}
+            )
+
+        def post(self, url, *, headers, json):
+            action = json["params"]["arguments"]["action"]
+            return httpx.Response(
+                200,
+                json={"result": {"content": [] if action == "release" else [{"type": "image", "data": "aW1hZ2U="}]}},
+            )
+
+    monkeypatch.setattr(httpx, "Client", Client)
+    if replacement_ready:
+        assert p.ready(str(uuid.uuid4()), "test-token", "test-password", True) == "10.253.0.10"
+    else:
+        with pytest.raises(ProviderError, match="initialization bound"):
+            p.ready(str(uuid.uuid4()), "test-token", "test-password", True)
+        assert clock[0] <= 362
+    assert len(upgrades) == 1

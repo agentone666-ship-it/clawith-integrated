@@ -150,7 +150,7 @@ class Manager:
         row = self.row(ident)
         if (
             row["state"] == "ready"
-            and (self.browser_sync is None or row["browser_protocol"] == 2)
+            and (self.browser_sync is None or row["browser_protocol"] == 20)
             and await asyncio.to_thread(self.provider.state, ident) == "running"
         ):
             return
@@ -180,7 +180,7 @@ class Manager:
             self.db.commit()
             raise SandboxError(str(exc), 503) from exc
         self.db.execute(
-            "UPDATE desktops SET state='ready',personalized=1,browser_protocol=2,ip=?,idle_since=? WHERE id=?",
+            "UPDATE desktops SET state='ready',personalized=1,browser_protocol=20,ip=?,idle_since=? WHERE id=?",
             (ip, self.clock(), ident),
         )
         self.db.commit()
@@ -228,7 +228,7 @@ class Manager:
             row = self.row(ident)
             try:
                 async with (
-                    httpx.AsyncClient(trust_env=False, timeout=45) as client,
+                    httpx.AsyncClient(trust_env=False, timeout=120 if action == "launch_app" else 45) as client,
                     client.stream(
                         "POST",
                         "http://" + row["ip"] + ":8090/mcp",
@@ -245,6 +245,35 @@ class Manager:
                 result = json.loads(raw)
                 if not isinstance(result, dict):
                     raise SandboxError("Desktop returned an invalid result", 502)
+                if (
+                    result.get("result", {}).get("structuredContent", {}).get("business_browser_prepared")
+                    and self.browser_sync
+                ):
+                    for _ in range(3):
+                        await self.browser_sync.synchronize(ident)
+                        if self.browser_sync.vault.view(ident)["status"] == "synced":
+                            break
+                        await asyncio.sleep(0.25)
+                    if self.browser_sync.vault.view(ident)["status"] != "synced":
+                        raise SandboxError(
+                            "Business browser opened; account login state is not yet synchronized. Observe before continuing",
+                            425,
+                        )
+                    params = body.get("params", {})
+                    arguments = params.get("arguments", {})
+                    runtime = (params.get("_meta") or {}).get("io.clawith/runtime")
+                    session = "run_" + runtime["run_id"].replace("-", "") if runtime else arguments.get("session_id")
+                    async with httpx.AsyncClient(trust_env=False, timeout=40) as client:
+                        navigation = await client.post(
+                            "http://" + row["ip"] + ":8090/browser/navigate",
+                            headers={"Authorization": "Bearer " + row["token"]},
+                            json={"session": session, "request_id": arguments.get("request_id")},
+                        )
+                        navigation.raise_for_status()
+                        if navigation.json() != {"ok": True}:
+                            raise SandboxError("Business browser navigation was not confirmed; inspect desktop", 502)
+                    result["result"]["structuredContent"].pop("business_browser_prepared", None)
+                    result["result"]["content"] = [{"type": "text", "text": "Business browser opened."}]
                 return result
             except (httpx.HTTPError, ValueError) as exc:
                 raise SandboxError(

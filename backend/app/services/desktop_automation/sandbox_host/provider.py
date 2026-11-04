@@ -252,8 +252,8 @@ class Libvirt:
         # Bound every Windows command line below 32 KiB. Only the pinned provider
         # asset is written; this path never accepts model code or a caller path.
         source = Path(__file__).with_name("windows_bridge.py.in").read_bytes()
-        for offset in range(0, len(source), 3072):
-            chunk = base64.b64encode(source[offset : offset + 3072]).decode()
+        for offset in range(0, len(source), 8192):
+            chunk = base64.b64encode(source[offset : offset + 8192]).decode()
             mode = "Create" if offset == 0 else "Append"
             self.powershell(
                 ident,
@@ -264,14 +264,18 @@ try {{$b=[Convert]::FromBase64String('{chunk}');$f.Write($b,0,$b.Length)}} final
             )
 
     def upload_browser(self, ident: str) -> None:
-        source = Path(__file__).with_name("browser_guest.py").read_bytes()
-        for offset in range(0, len(source), 3072):
-            chunk = base64.b64encode(source[offset : offset + 3072]).decode()
+        for filename in ("browser_guest.py", "business_browser.py", "business_browser_launcher.py"):
+            self.upload_browser_asset(ident, filename)
+
+    def upload_browser_asset(self, ident: str, filename: str) -> None:
+        source = Path(__file__).with_name(filename).read_bytes()
+        for offset in range(0, len(source), 8192):
+            chunk = base64.b64encode(source[offset : offset + 8192]).decode()
             mode = "Create" if offset == 0 else "Append"
             self.powershell(
                 ident,
                 f"""$ErrorActionPreference='Stop'
-$f=[IO.File]::Open('C:\\Clawith\\browser_guest.py',[IO.FileMode]::{mode},[IO.FileAccess]::Write)
+$f=[IO.File]::Open('C:\\Clawith\\{filename}',[IO.FileMode]::{mode},[IO.FileAccess]::Write)
 try {{$b=[Convert]::FromBase64String('{chunk}');$f.Write($b,0,$b.Length)}} finally {{$f.Dispose()}}
 """,
             )
@@ -281,28 +285,40 @@ try {{$b=[Convert]::FromBase64String('{chunk}');$f.Write($b,0,$b.Length)}} final
         self.powershell(
             ident,
             r"""$ErrorActionPreference='Stop'
-& C:\Clawith\Python\python.exe -c "import importlib.metadata as m,sys;v=next((d.version for d in m.distributions() if d.metadata['Name']=='websockets'),None);sys.exit(0 if v=='15.0.1' else 1)"
+& C:\Clawith\Python\python.exe -c "import importlib.metadata as m,sys;v=next((d.version for d in m.distributions() if d.metadata['Name']=='playwright'),None);sys.exit(0 if v=='1.64.1' else 1)"
 if ($LASTEXITCODE -ne 0) {
- & C:\Clawith\Python\python.exe -m pip install --disable-pip-version-check --only-binary=:all: --timeout 10 --retries 1 websockets==15.0.1 | Out-Null
- if ($LASTEXITCODE -ne 0) {throw 'Business browser dependency installation failed'}
+ $mutex=New-Object Threading.Mutex($false,'Local\ClawithBrowserDependencies')
+ if (!$mutex.WaitOne(0)) {throw 'Browser dependency installation is still running'}
+ try {
+  & C:\Clawith\Python\python.exe -m pip install --disable-pip-version-check --only-binary=:all: --timeout 10 --retries 1 playwright==1.64.1 | Out-Null
+  if ($LASTEXITCODE -ne 0) {throw 'Business browser dependency installation failed'}
+ } finally {$mutex.ReleaseMutex();$mutex.Dispose()}
 }
-$browserProfile='C:\Users\Clawith\AppData\Local\Clawith\BusinessBrowser'
-New-Item -ItemType Directory -Path $browserProfile -Force | Out-Null
 $shell=New-Object -ComObject WScript.Shell
 foreach($folder in @('C:\Users\Clawith\Desktop','C:\Users\Clawith\AppData\Roaming\Microsoft\Windows\Start Menu\Programs')) {
  New-Item -ItemType Directory -Path $folder -Force | Out-Null
  foreach($name in @('Business Browser','Microsoft Edge')) {
   $link=$shell.CreateShortcut("$folder\$name.lnk")
-  $link.TargetPath='C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
-  $link.Arguments='--user-data-dir="C:\Users\Clawith\AppData\Local\Clawith\BusinessBrowser" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-first-run'
+  $link.TargetPath='C:\Clawith\Python\pythonw.exe'
+  $link.Arguments='C:\Clawith\business_browser_launcher.py'
   $link.Save()
  }
 }
 """,
         )
 
-    def upgrade_browser(self, ident: str) -> None:
+    def upgrade_browser(self, ident: str, token: str) -> None:
         # Called only while this desktop's lifecycle lock excludes business input.
+        with httpx.Client(trust_env=False, timeout=15) as client:
+            response = client.post(
+                "http://" + self.ip(ident) + ":8090/browser/close", headers={"Authorization": "Bearer " + token}
+            )
+            # Older guest protocols predate this maintenance endpoint. Remove
+            # this legacy branch when all stored desktops reach protocol7.
+            if response.status_code != 404:
+                response.raise_for_status()
+                if response.json() != {"ok": True}:
+                    raise ProviderError("Managed browser cleanup was not confirmed")
         self.upload_browser(ident)
         self.upload_bridge(ident)
         self.configure_browser(ident)
@@ -312,6 +328,8 @@ foreach($folder in @('C:\Users\Clawith\Desktop','C:\Users\Clawith\AppData\Roamin
 # Stop only the managed controller; preserve business browsers and all user apps.
 Stop-ScheduledTask -TaskName 'Clawith-CUA-Interactive'
 Get-CimInstance Win32_Process | Where-Object {$_.Name -eq 'python.exe' -and $_.CommandLine -match 'C:\\Clawith\\bridge.py'} | ForEach-Object {Stop-Process -Id $_.ProcessId -Force}
+$principal=New-ScheduledTaskPrincipal -UserId "$env:COMPUTERNAME\Clawith" -LogonType Interactive -RunLevel Highest
+Set-ScheduledTask -TaskName 'Clawith-CUA-Interactive' -Principal $principal | Out-Null
 Start-Sleep -Seconds 1
 Start-ScheduledTask -TaskName 'Clawith-CUA-Interactive'
 """,
@@ -432,7 +450,10 @@ if ($LASTEXITCODE -ne 0) {{throw 'Interactive shell initialization did not launc
         raise ProviderError("Windows initial desktop component registration timed out")
 
     def ready(self, ident: str, token: str, password: str, personalized: bool) -> str:
-        deadline = time.monotonic() + (180 if personalized else 600)
+        started = time.monotonic()
+        deadline = started + (180 if personalized else 600)
+        complete_deadline = started + (360 if personalized else 600)
+        upgraded = False
         configured = personalized
         session = "ready_" + uuid.uuid4().hex
         while time.monotonic() < deadline:
@@ -444,8 +465,15 @@ if ($LASTEXITCODE -ne 0) {{throw 'Interactive shell initialization did not launc
                 with httpx.Client(trust_env=False, timeout=httpx.Timeout(45, connect=2)) as client:
                     response = client.get("http://" + ip + ":8090/health", timeout=2)
                     if response.status_code == 200 and response.json().get("ready"):
-                        if response.json().get("browser_sync_protocol") != 2:
-                            self.upgrade_browser(ident)
+                        if response.json().get("browser_sync_protocol") != 20:
+                            if not upgraded:
+                                self.upgrade_browser(ident, token)
+                                upgraded = True
+                                # Asset installation consumes the old startup phase;
+                                # prove the replacement controller within a fresh,
+                                # bounded phase, without reinstalling in the poll loop.
+                                deadline = min(complete_deadline, time.monotonic() + 180)
+                            time.sleep(2)
                             continue
                         # Prove an interactive screenshot exists before admitting inputs.
                         body = {

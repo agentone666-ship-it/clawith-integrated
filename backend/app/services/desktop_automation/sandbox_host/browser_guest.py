@@ -1,23 +1,38 @@
-"""Managed Edge CDP adapter, running only inside the interactive Windows guest.
+"""Bounded account-state access to the broker's own Playwright browser.
 
-No arbitrary CDP endpoint is exposed. The bridge offers bounded snapshot/apply
-operations authenticated by the existing per-desktop secret.
+The persistent context uses a private pipe. Temporary, hidden documents read
+and update origin storage without loading business pages or installing scripts.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
-import hashlib
 import json
-from contextlib import suppress
-from urllib.request import ProxyHandler, build_opener
+from contextlib import asynccontextmanager, suppress
+from typing import Literal, TypedDict
+from urllib.parse import urlsplit
 
-from websockets.asyncio.client import connect
-from websockets.exceptions import WebSocketException
+from playwright.async_api import Error as PlaywrightError
 
 MAX_BYTES = 2 * 1024 * 1024
+REQUEST_TIMEOUT = 4
 COOKIE_FIELDS = {"name", "value", "domain", "path", "secure", "httpOnly", "sameSite", "expires", "partitionKey"}
+
+
+class StorageSnapshot(TypedDict):
+    cookies: list[dict[str, object]]
+    origins: dict[str, dict[str, str]]
+
+
+class ConnectedSnapshot(TypedDict):
+    connected: Literal[True]
+    browser_id: str
+    snapshot: StorageSnapshot
+
+
+class ClosedSnapshot(TypedDict):
+    connected: Literal[False]
 
 
 def ckey(c):
@@ -30,278 +45,289 @@ def lkey(site, key):
     return "l:" + json.dumps([site, key], separators=(",", ":"))
 
 
-class Browser:
-    def __init__(self, endpoint="http://127.0.0.1:9222/json/version"):
-        self.endpoint = endpoint
-        self.ws = None
-        self.pending = {}
+def origin(url):
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    host = parsed.hostname
+    if ":" in host:
+        host = "[" + host + "]"
+    port = parsed.port
+    suffix = f":{port}" if port and port != {"http": 80, "https": 443}[parsed.scheme] else ""
+    return parsed.scheme + "://" + host + suffix
+
+
+class Document:
+    """One session-owned hidden target, with bounded legacy CDP messages."""
+
+    def __init__(self, root):
+        self.root = root
+        self.target = None
+        self.creation_started = False
+        self.sid = None
         self.serial = 0
-        self.sessions = {}
-        self.hidden = set()
-        self.origins = {}
-        self.worker = None
+        self.pending = {}
         self.tasks = set()
-        self.lock = asyncio.Lock()
-        self.connected = False
-        self.instance = ""
+        self.listener = self.receive
 
-    async def start(self):
-        self.worker = asyncio.create_task(self.maintain())
+    def receive(self, event):
+        if event.get("sessionId") != self.sid:
+            return
+        message = event.get("message", "")
+        if len(message.encode()) > 2 * MAX_BYTES:
+            for future in self.pending.values():
+                if not future.done():
+                    future.set_exception(RuntimeError("Browser storage response exceeds its bound"))
+            return
+        data = json.loads(message)
+        if "id" in data:
+            future = self.pending.get(data["id"])
+            if future and not future.done():
+                if "error" in data:
+                    future.set_exception(RuntimeError("Browser storage command was rejected"))
+                else:
+                    future.set_result(data.get("result", {}))
+        elif data.get("method") == "Fetch.requestPaused":
+            task = asyncio.create_task(
+                self.call(
+                    "Fetch.fulfillRequest",
+                    {
+                        "requestId": data["params"]["requestId"],
+                        "responseCode": 200,
+                        "responseHeaders": [
+                            {"name": "Content-Type", "value": "text/html; charset=utf-8"},
+                            {"name": "Cache-Control", "value": "no-store"},
+                        ],
+                        "body": base64.b64encode(b"<!doctype html><html><body></body></html>").decode(),
+                    },
+                )
+            )
+            self.tasks.add(task)
+            task.add_done_callback(self.tasks.discard)
+            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
-    async def stop(self):
-        if self.worker:
-            self.worker.cancel()
-            await asyncio.gather(self.worker, return_exceptions=True)
-        if self.ws:
-            await self.ws.close()
-        for task in self.tasks:
-            task.cancel()
-        await asyncio.gather(*self.tasks, return_exceptions=True)
-
-    async def call(self, method, params=None, sid=None):
-        if not self.ws or len(self.pending) >= 128:
-            raise RuntimeError("Business browser is disconnected or busy")
+    async def call(self, method, params=None):
         self.serial += 1
         ident = self.serial
         future = asyncio.get_running_loop().create_future()
         self.pending[ident] = future
         try:
-            body = {"id": ident, "method": method, "params": params or {}}
-            if sid:
-                body["sessionId"] = sid
-            await self.ws.send(json.dumps(body))
-            return await asyncio.wait_for(future, 4)
+            async with asyncio.timeout(REQUEST_TIMEOUT):
+                await self.root.send(
+                    "Target.sendMessageToTarget",
+                    {
+                        "sessionId": self.sid,
+                        "message": json.dumps({"id": ident, "method": method, "params": params or {}}),
+                    },
+                )
+                return await future
+        except (PlaywrightError, TimeoutError) as exc:
+            raise RuntimeError("Browser storage operation did not complete: " + method) from exc
         finally:
             self.pending.pop(ident, None)
 
-    def spawn(self, coroutine):
-        task = asyncio.create_task(coroutine)
-        self.tasks.add(task)
-        task.add_done_callback(self.tasks.discard)
-        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
-        return task
+    async def open(self):
+        self.root.on("Target.receivedMessageFromTarget", self.listener)
+        self.creation_started = True
+        async with asyncio.timeout(REQUEST_TIMEOUT):
+            self.target = (await self.root.send("Target.createTarget", {"url": "about:blank", "hidden": True}))[
+                "targetId"
+            ]
+            self.sid = (await self.root.send("Target.attachToTarget", {"targetId": self.target, "flatten": False}))[
+                "sessionId"
+            ]
+        await self.call("DOMStorage.enable")
+        await self.call("Page.enable")
+        await self.call("Network.setBypassServiceWorker", {"bypass": True})
+        await self.call("Network.setCacheDisabled", {"cacheDisabled": True})
+        await self.call("Fetch.enable", {"patterns": [{"urlPattern": "*", "requestStage": "Request"}]})
 
-    async def read(self):
-        ws = self.ws
-        if ws is None:
-            raise RuntimeError("Business browser is disconnected")
-        async for raw in ws:
-            msg = json.loads(raw)
-            if "id" in msg:
-                future = self.pending.get(msg["id"])
-                if future and not future.done():
-                    if "error" in msg:
-                        future.set_exception(RuntimeError("Business browser operation failed"))
-                    else:
-                        future.set_result(msg.get("result", {}))
-            elif msg.get("method") == "Target.attachedToTarget":
-                p = msg["params"]
-                if p["targetInfo"]["type"] in {"page", "iframe"} and len(self.sessions) < 64:
-                    sid = p["sessionId"]
-                    self.sessions[sid] = {"script": None, "ready": False, "target": p["targetInfo"]["targetId"]}
-                    self.spawn(self.configure(sid))
-                else:
-                    self.spawn(self.call("Runtime.runIfWaitingForDebugger", sid=p["sessionId"]))
-            elif msg.get("method") == "Target.detachedFromTarget":
-                self.sessions.pop(msg["params"]["sessionId"], None)
-            elif msg.get("method") == "Fetch.requestPaused" and msg.get("sessionId") in self.hidden:
-                self.spawn(
-                    self.call(
-                        "Fetch.fulfillRequest",
-                        {
-                            "requestId": msg["params"]["requestId"],
-                            "responseCode": 200,
-                            "responseHeaders": [{"name": "Content-Type", "value": "text/html; charset=utf-8"}],
-                            "body": base64.b64encode(b"<!doctype html><html><body></body></html>").decode(),
-                        },
-                        msg["sessionId"],
-                    )
-                )
-            elif msg.get("method", "").startswith("DOMStorage.domStorage"):
-                p = msg["params"]
-                store = p.get("storageId", {})
-                site = store.get("securityOrigin", "")
-                if store.get("isLocalStorage") and site.startswith(("http://", "https://")):
-                    items = self.origins.setdefault(site, {})
-                    kind = msg["method"]
-                    if kind.endswith("ItemsCleared"):
-                        items.clear()
-                    elif kind.endswith("ItemRemoved"):
-                        items.pop(p["key"], None)
-                    else:
-                        items[p["key"]] = p["newValue"]
+    async def storage(self, site, changes):
+        await self.call("Page.navigate", {"url": site + "/"})
+        for _ in range(80):
+            tree = await self.call("Page.getFrameTree")
+            if tree["frameTree"]["frame"].get("securityOrigin") == site:
+                break
+            await asyncio.sleep(0.025)
+        else:
+            raise RuntimeError("Browser storage origin was not established")
+        storage = {"securityOrigin": site, "isLocalStorage": True}
+        for key, value in changes.items():
+            params = {"storageId": storage, "key": key}
+            if value is not None:
+                params["value"] = value
+            await self.call(
+                "DOMStorage.removeDOMStorageItem" if value is None else "DOMStorage.setDOMStorageItem", params
+            )
+        items = dict((await self.call("DOMStorage.getDOMStorageItems", {"storageId": storage}))["entries"])
+        if any(items.get(k) != v for k, v in changes.items()):
+            raise RuntimeError("Browser storage write was not confirmed")
+        return items
 
-    async def configure(self, sid):
+    async def close(self):
+        tasks = list(self.tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.root.remove_listener("Target.receivedMessageFromTarget", self.listener)
+        if self.target:
+            async with asyncio.timeout(REQUEST_TIMEOUT):
+                await self.root.send("Target.closeTarget", {"targetId": self.target})
+
+
+class Browser:
+    def __init__(self):
+        self.context = None
+        self.root = None
+        self.instance = ""
+        self.origins = set()
+        self.lock = asyncio.Lock()
+        self.page_listener = self.observe_page
+
+    @property
+    def connected(self):
+        return self.context is not None and self.context.browser is not None and self.context.browser.is_connected()
+
+    def observe_frame(self, frame):
+        site = origin(frame.url)
+        if site:
+            self.origins.add(site)
+
+    def observe_page(self, page):
+        for frame in page.frames:
+            self.observe_frame(frame)
+        page.on("framenavigated", self.observe_frame)
+
+    async def bind(self, context, identity):
+        await self.unbind()
+        self.context, self.instance = context, identity
+        self.root = await context.browser.new_browser_cdp_session()
+        context.on("page", self.page_listener)
+        for page in context.pages:
+            self.observe_page(page)
+
+    async def unbind(self):
+        if self.context:
+            self.context.remove_listener("page", self.page_listener)
+            for page in self.context.pages:
+                page.remove_listener("framenavigated", self.observe_frame)
+        if self.root:
+            # A closed browser has already destroyed this session and its hidden targets.
+            with suppress(PlaywrightError):
+                await self.root.detach()
+        self.context, self.root = None, None
+
+    async def root_call(self, method, params=None):
+        if not self.connected:
+            raise RuntimeError("Business browser is closed")
+        if self.root is None:
+            assert self.context is not None
+            self.root = await self.context.browser.new_browser_cdp_session()
         try:
-            state = self.sessions[sid]
-            await self.call("DOMStorage.enable", sid=sid)
-            state["ready"] = True
+            async with asyncio.timeout(REQUEST_TIMEOUT):
+                return await self.root.send(method, params or {})
+        except (PlaywrightError, TimeoutError) as exc:
+            raise RuntimeError("Browser operation did not complete: " + method) from exc
+
+    @asynccontextmanager
+    async def document(self):
+        if not self.connected:
+            raise RuntimeError("Business browser is closed")
+        if self.root is None:
+            assert self.context is not None
+            self.root = await self.context.browser.new_browser_cdp_session()
+        root = self.root
+        document = Document(root)
+        try:
+            await document.open()
+            yield document
         finally:
-            with suppress(RuntimeError, TimeoutError):
-                await self.call("Runtime.runIfWaitingForDebugger", sid=sid)
-
-    async def maintain(self):
-        while True:
-            reader = None
             try:
+                await document.close()
+                if document.creation_started and document.target is None:
+                    async with asyncio.timeout(REQUEST_TIMEOUT):
+                        await root.detach()
+                    self.root = None
+            except (PlaywrightError, RuntimeError, TimeoutError):
+                # Detaching the creating session removes even a hidden target
+                # whose create/close acknowledgement was lost. Never leave it orphaned.
+                with suppress(PlaywrightError):
+                    await root.detach()
+                self.root = None
 
-                def address():
-                    with build_opener(ProxyHandler({})).open(self.endpoint, timeout=1) as response:
-                        return json.loads(response.read(65536))["webSocketDebuggerUrl"]
-
-                address_value = await asyncio.to_thread(address)
-                # The only permitted debugger is guest loopback; never follow a remote URL.
-                if not address_value.startswith("ws://127.0.0.1:") and not address_value.startswith("ws://localhost:"):
-                    raise RuntimeError("Invalid business browser endpoint")
-                async with connect(address_value, max_size=3 * MAX_BYTES, open_timeout=2, proxy=None) as ws:
-                    self.ws = ws
-                    self.instance = hashlib.sha256(address_value.encode()).hexdigest()
-                    self.sessions.clear()
-                    self.origins.clear()
-                    self.hidden.clear()
-                    reader = asyncio.create_task(self.read())
-                    await self.call(
-                        "Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True}
-                    )
-                    self.connected = True
-                    await reader
-            except (OSError, ValueError, RuntimeError, TimeoutError, WebSocketException):
-                pass  # Browser may be closed; status is exposed to the host, without secrets.
-            finally:
-                self.connected = False
-                self.ws = None
-                if reader:
-                    reader.cancel()
-                    await asyncio.gather(reader, return_exceptions=True)
-                for future in self.pending.values():
-                    if not future.done():
-                        future.set_exception(RuntimeError("Business browser disconnected"))
-            await asyncio.sleep(1)
-
-    async def snapshot(self) -> dict:
+    async def snapshot(self, hints=None) -> ConnectedSnapshot | ClosedSnapshot:
         if not self.connected:
             return {"connected": False}
-        cookies = (await self.call("Storage.getCookies"))["cookies"]
+        for site in hints or []:
+            if not isinstance(site, str) or origin(site) != site:
+                raise RuntimeError("Invalid browser origin hint")
+            self.origins.add(site)
+        if len(self.origins) > 128:
+            raise RuntimeError("Browser exceeds its observed-origin bound")
+        cookies = (await self.root_call("Storage.getCookies"))["cookies"]
         if any(c.get("partitionKeyOpaque") for c in cookies):
             raise RuntimeError("Opaque partitioned cookies require a business-system adapter")
         cookies = [{k: v for k, v in c.items() if k in COOKIE_FIELDS} for c in cookies]
-        for sid, state in list(self.sessions.items()):
-            if not state["ready"]:
-                raise RuntimeError("Business browser tab is still preparing")
-            tree = await self.call("Page.getFrameTree", sid=sid)
-            state["origins"] = set()
-            frames = [tree["frameTree"]]
-            while frames:
-                frame = frames.pop()
-                frames.extend(frame.get("childFrames", []))
-                site = frame["frame"].get("securityOrigin", "")
-                if site.startswith(("http://", "https://")):
-                    state["origins"].add(site)
-                    value = await self.call(
-                        "DOMStorage.getDOMStorageItems",
-                        {"storageId": {"securityOrigin": site, "isLocalStorage": True}},
-                        sid,
-                    )
-                    self.origins[site] = dict(value["entries"])
+        observed = {}
+        if self.origins:
+            async with self.document() as doc:
+                for site in sorted(self.origins):
+                    observed[site] = await doc.storage(site, {})
         cookies.sort(key=ckey)
-        result = {"cookies": cookies, "origins": self.origins}
+        result: StorageSnapshot = {"cookies": cookies, "origins": observed}
         if len(json.dumps(result, ensure_ascii=False).encode()) > MAX_BYTES:
-            raise RuntimeError("Business browser state exceeds synchronization capacity")
-        return {"connected": True, "browser_id": self.instance, "snapshot": json.loads(json.dumps(result))}
-
-    async def write_origin(self, site, changes):
-        """Restore storage in an invisible, request-intercepted empty document.
-
-        Unlike injecting a saved value on every navigation, this changes the
-        real origin database once and cannot resurrect a later app logout.
-        No requests or app JavaScript reach the business site.
-        """
-        target = (await self.call("Target.createTarget", {"url": "about:blank", "hidden": True}))["targetId"]
-        sid = None
-        try:
-            sid = (await self.call("Target.attachToTarget", {"targetId": target, "flatten": True}))["sessionId"]
-            if sid not in self.sessions:
-                self.sessions[sid] = {"target": target, "ready": False}
-                await self.configure(sid)
-            for _ in range(40):
-                if self.sessions.get(sid, {}).get("ready"):
-                    break
-                await asyncio.sleep(0.025)
-            else:
-                raise RuntimeError("Browser storage context did not become ready")
-            self.hidden.add(sid)
-            await self.call("Network.setBypassServiceWorker", {"bypass": True}, sid)
-            await self.call("Fetch.enable", {"patterns": [{"urlPattern": "*", "requestStage": "Request"}]}, sid)
-            await self.call("Page.navigate", {"url": site + "/"}, sid)
-            for _ in range(40):
-                frame = await self.call("Page.getFrameTree", sid=sid)
-                if frame["frameTree"]["frame"].get("securityOrigin") == site:
-                    break
-                await asyncio.sleep(0.025)
-            else:
-                raise RuntimeError("Browser storage origin was not established")
-            storage = {"securityOrigin": site, "isLocalStorage": True}
-            for name, value in changes.items():
-                p = {"storageId": storage, "key": name}
-                if value is not None:
-                    p["value"] = value
-                await self.call(
-                    "DOMStorage.removeDOMStorageItem" if value is None else "DOMStorage.setDOMStorageItem", p, sid
-                )
-            value = await self.call("DOMStorage.getDOMStorageItems", {"storageId": storage}, sid)
-            self.origins[site] = dict(value["entries"])
-            if any(self.origins[site].get(k) != v for k, v in changes.items()):
-                raise RuntimeError("Browser storage write was not confirmed")
-        finally:
-            if sid:
-                self.hidden.discard(sid)
-            if self.connected:
-                await self.call("Target.closeTarget", {"targetId": target})
+            raise RuntimeError("Browser state exceeds its synchronization bound")
+        return {"connected": True, "browser_id": self.instance, "snapshot": result}
 
     async def apply(self, desired, expected):
-        """Idempotent reconciliation; refuse a changed snapshot before writing."""
-        current = await self.snapshot()
-        if not current.get("connected") or current["snapshot"] != expected:
+        sites = {json.loads(k[2:])[0] for k in desired if k.startswith("l:")}
+        current = await self.snapshot(sites)
+        if current["connected"] is False:
+            raise RuntimeError("Business browser closed during synchronization")
+        if current["snapshot"] != expected:
             raise RuntimeError("Business browser changed during synchronization; retry observation")
         cookies = {ckey(c): c for c in expected["cookies"]}
-        new_cookies = []
+        added, deleted, storage = [], [], {}
         for key, value in desired.items():
-            if not key.startswith("c:") or value == cookies.get(key):
-                continue
-            if value is None:
-                domain, path, name, partition = json.loads(key[2:])
-                p = {"name": name, "domain": domain, "path": path}
-                if partition:
-                    p["partitionKey"] = partition
-                sid = next(iter(self.sessions), None)
-                if not sid:
-                    raise RuntimeError("Open the Business Browser before synchronizing cookies")
-                await self.call("Network.deleteCookies", p, sid)
-            else:
-                c = dict(value)
-                if c.get("expires", 0) < 0:
-                    c.pop("expires", None)
-                new_cookies.append(c)
-        if new_cookies:
-            await self.call("Storage.setCookies", {"cookies": new_cookies})
-        sites = {}
-        for key, value in desired.items():
-            if key.startswith("l:"):
+            if key.startswith("c:"):
+                if value == cookies.get(key):
+                    continue
+                if value is None:
+                    domain, path, name, partition = json.loads(key[2:])
+                    params = {"name": name, "domain": domain, "path": path}
+                    if partition:
+                        params["partitionKey"] = partition
+                    deleted.append(params)
+                else:
+                    cookie = dict(value)
+                    if not cookie["domain"].startswith("."):
+                        domain = cookie.pop("domain")
+                        cookie["url"] = ("https://" if cookie.get("secure") else "http://") + domain + cookie["path"]
+                    if cookie.get("expires", 0) < 0:
+                        cookie.pop("expires", None)
+                    added.append(cookie)
+            elif key.startswith("l:"):
                 site, name = json.loads(key[2:])
-                if site not in expected["origins"] or expected["origins"][site].get(name) != value:
-                    sites.setdefault(site, {})[name] = value
-        for site, changes in sites.items():
-            await self.write_origin(site, changes)
-        verified = await self.snapshot()
-        if not verified.get("connected"):
-            raise RuntimeError("Business browser synchronization was not confirmed")
+                if expected["origins"].get(site, {}).get(name) != value:
+                    storage.setdefault(site, {})[name] = value
+        if added:
+            await self.root_call("Storage.setCookies", {"cookies": added})
+        if deleted or storage:
+            async with self.document() as doc:
+                for params in deleted:
+                    await doc.call("Network.deleteCookies", params)
+                for site, changes in storage.items():
+                    await doc.storage(site, changes)
+        verified = await self.snapshot(sites)
+        if verified["connected"] is False:
+            raise RuntimeError("Browser synchronization was not confirmed")
         actual = {ckey(c): c for c in verified["snapshot"]["cookies"]}
         for key, value in desired.items():
             if key.startswith("c:"):
                 if actual.get(key) != value:
-                    raise RuntimeError("Business browser cookie write was not confirmed")
+                    raise RuntimeError("Browser cookie write was not confirmed")
             else:
                 site, name = json.loads(key[2:])
-                if site in verified["snapshot"]["origins"] and verified["snapshot"]["origins"][site].get(name) != value:
-                    raise RuntimeError("Business browser storage write was not confirmed")
+                if verified["snapshot"]["origins"].get(site, {}).get(name) != value:
+                    raise RuntimeError("Browser storage write was not confirmed")
         return {"ok": True}
