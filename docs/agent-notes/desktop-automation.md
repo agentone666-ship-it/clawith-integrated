@@ -1405,3 +1405,17 @@ capture, logout before an actual remote apply, and an accepted write with a lost
 receipt. The latter still reconciles its pending fence. Live Windows tutorial
 acceptance and video delivery remain separate evidence in
 `artifacts/account-login-sync-tutorial-20261104/`.
+
+The re-recorded tutorial completed live manual-input acceptance on three
+Windows VMs using the actual Clawith recording entry and fullscreen surface.
+Independent website receipts confirm shared login, logout followed by the other
+desktop's real refresh, re-login, retained login after managed-save/resume, and
+an unauthenticated different account. A private read also confirms that the
+different-account page was observed by its owned business-browser context.
+The UI-observed save/resume waits were48.690/49.148seconds; the video labels
+trimmed waits and accelerated footage separately from normal-speed narration.
+The delivered artifact is a usage tutorial, not a latency benchmark. Final
+readback in `manual-windows-proof.json` confirms all registered VMs saved,
+zero active leases/held compute, removed fixture access rules, matching deployed
+source and the original main Runtime container. Only the synthetic tutorial
+login was cleared; no dedicated profile directory or shared account vault was reset.
