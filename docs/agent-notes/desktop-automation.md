@@ -1296,10 +1296,10 @@ the server acceptance artifact is
 `artifacts/account-login-sync-20261102/windows-proof.json`. The main Clawith
 Runtime/backend container is not restarted by this private-host rollout.
 
-Current live deployment has the private host and frontend installed with the
-main Runtime container unchanged. Protocol22 reached actual Windows Edge launch,
-but `launch_persistent_context` timed out; cross-Agent Windows acceptance remains
-pending. Independent SDK initialization/exit succeeded. The attempted extra Edge
+Live deployment has the private host and frontend installed with the main Runtime
+container unchanged. Earlier protocol22 acceptance reached actual Edge launch,
+but `launch_persistent_context` timed out. Independent SDK initialization/exit
+succeeded. The attempted extra Edge
 de-elevation flag did not resolve the launch and is removed. Do not infer a
 privilege fix from the diagnostic probes: their ordinary/restricted-token process
 comparison did not establish a working browser. During the probe, the4GiB guest
@@ -1307,9 +1307,12 @@ reported89percent memory load and410MiB available; the host had about22GiB
 available. Expanding the existing desktop requires normal shutdown, since its
 current machine definition has no memory hotplug configuration. The user confirmed
 there is no unsaved Windows work and authorized normal restart. Normal shutdown
-succeeded and both the registry and hypervisor now read2 vCPUs/8192MiB. The
-Windows cold boot and browser acceptance are still running; allocation readback
-is not browser acceptance.
+succeeded. Both the primary test desktop and the separate-account legacy test
+desktop now read2 vCPUs/8192MiB in the registry and hypervisor. Windows itself
+reported8,584,962,048 usable physical bytes on the primary desktop. Independent
+before/after checks confirmed unchanged domain UUID, disk, NVRAM, TPM, network,
+account identity and platform-stored guest credentials. These allocation and
+preservation facts are separate from browser acceptance below.
 
 Protocol23 source is installed in the private host; guest readiness and live
 acceptance remain separate from that deployment. Its lifecycle fixes follow. A guest release that
@@ -1331,13 +1334,42 @@ managed-save RAM, preserve disk/TPM/NVRAM/MAC identity, verify hypervisor readba
 then update the registry and terminal compute state. Saved RAM must be restored
 before normal shutdown; it must never be discarded to make a resize work.
 The same Windows account, password, browser profile and encrypted host account
-state are retained. Memory expansion is a capacity correction to test, not proof
-that the browser failure is resolved.
+state are retained. Memory expansion corrects measured capacity pressure; the
+combined reboot, upgrade and allocation changes do not isolate the cause of the
+earlier browser failures.
 
 Local checks pass89 focused tests plus scoped Ruff/Pyright. They cover the
 release ownership boundary, truthful native release,
 legacy allocation migration, cold resource maintenance and identity preservation,
 explicit QGA deadlines, and unknown-upgrade acknowledgement handling in addition
-to the existing storage/receipt suite. Live Windows acceptance remains separately
-recorded in `artifacts/account-login-sync-20261102/windows-proof.json` only when
-the entire three-desktop business-site receipt batch succeeds.
+to the existing storage/receipt suite.
+
+Real Windows acceptance is complete across staged batches using three isolated
+VMs and the private gateway's actual `computer` Tool route. An independent test
+website checked the source IP, HttpOnly Cookie header and JavaScript-read
+LocalStorage: same-account login, token rotation, logout with storage clearing
+and redirect, and different-account isolation passed. The first batch completed
+the same-account cases but stopped at a legacy guest upgrade. Offline pinned
+dependencies, normal shutdown and a fresh controller completed that migration.
+The continuation verifies different-account isolation and retains a SHA256 link
+to the original same-account log; it does not relabel the failed initial batch.
+
+After all leases ended and VMs were saved, the private sandbox service was
+restarted. Resuming the primary Windows VM retained both test login values;
+Windows memory was independently read through QGA. That resume took38.103seconds
+to Tool readiness and3.350seconds for business-browser preparation. These are
+single-run observations, not latency percentiles or a performance SLA.
+
+Evidence lives in `artifacts/account-login-sync-20261102/`: `windows-proof.json`,
+`resume-proof.json`, `maintenance-proof.json`, `maintenance-isolation-proof.json`,
+`restart-proof.json` and `final-readback.json`. Final independent readback found
+zero active leases, all four registered VMs shut off with managed-save images,
+zero held compute, removed fixture firewall rules, an enabled/active private
+service, matching live frontend bytes and the original main Runtime container.
+No personal browser state or private backup is included in these artifacts.
+
+Limit: one first Edge launch after the legacy desktop's cold boot exited0 with
+`TargetClosedError`; a later explicit fresh task after save/resume succeeded.
+No automatic input replay or security-flag change was introduced. The fixture
+proves supported Cookie/LocalStorage synchronization semantics, not universal
+business SSO compatibility or cold-start reliability under arbitrary host load.
