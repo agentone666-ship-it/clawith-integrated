@@ -1373,3 +1373,35 @@ Limit: one first Edge launch after the legacy desktop's cold boot exited0 with
 No automatic input replay or security-flag change was introduced. The fixture
 proves supported Cookie/LocalStorage synchronization semantics, not universal
 business SSO compatibility or cold-start reliability under arbitrary host load.
+
+### User-operated logout during synchronization (2026-11-04)
+
+Recording the account-sharing tutorial exposed a race absent from the earlier
+serialized acceptance: a user could log out after the host snapshot while an
+otherwise unnecessary apply was being checked. The guest rejected its changed
+snapshot, but the host treated that known rejection as an uncertain write and
+later restored canonical login. The failed tutorial take is diagnostic evidence,
+not successful acceptance footage.
+
+Protocol24 distinguishes a proven pre-write mismatch from a write whose result
+is unknown. `browser_guest.SnapshotChanged` is raised only by the comparison
+before any mutation. Its private route returns exactly HTTP409 with
+`{"code":"snapshot_changed","applied":false}`. Other failures, including
+post-write verification and timeouts, retain their uncertain pending fence.
+The host requires the explicit boolean false; malformed or older responses
+cannot authorize that transition.
+
+Source-only observations with no desired browser changes are acknowledged
+without an apply. This avoids writing back an old login merely because a user
+changed state immediately after capture. On a proven pre-write rejection, the
+vault retains the captured source as its comparison baseline, preserving
+unobserved origins, clears that pending apply and keeps status syncing. It does
+not advance the successful-sync timestamp. The next cycle observes the user's
+new state; previously published local changes are not mistaken for unrelated
+remote conflicts. No pointer/key input or uncertain browser write is replayed.
+
+Focused validation passes96 tests. Real Chromium routes exercise logout after
+capture, logout before an actual remote apply, and an accepted write with a lost
+receipt. The latter still reconciles its pending fence. Live Windows tutorial
+acceptance and video delivery remain separate evidence in
+`artifacts/account-login-sync-tutorial-20261104/`.

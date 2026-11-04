@@ -169,7 +169,7 @@ class Manager:
         row = self.row(ident)
         if (
             row["state"] == "ready"
-            and (self.browser_sync is None or row["browser_protocol"] == 23)
+            and (self.browser_sync is None or row["browser_protocol"] == 24)
             and await asyncio.to_thread(self.provider.state, ident) == "running"
         ):
             return
@@ -199,7 +199,7 @@ class Manager:
             self.db.commit()
             raise SandboxError(str(exc), 503) from exc
         self.db.execute(
-            "UPDATE desktops SET state='ready',personalized=1,browser_protocol=23,ip=?,idle_since=? WHERE id=?",
+            "UPDATE desktops SET state='ready',personalized=1,browser_protocol=24,ip=?,idle_since=? WHERE id=?",
             (ip, self.clock(), ident),
         )
         self.db.commit()

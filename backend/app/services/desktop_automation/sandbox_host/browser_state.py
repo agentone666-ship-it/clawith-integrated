@@ -210,6 +210,28 @@ class BrowserStates:
                 "UPDATE browser_peers SET pending=0,status='synced',synced=? WHERE desktop=?", (stamp, row["id"])
             )
 
+    def reject_apply(self, row, observed):
+        """Rebase a proven pre-write rejection, without acknowledging remote writes.
+
+        The captured source state may already have published local changes to the
+        account. Remember that observation so its next local edit is compared to
+        its own published values, rather than mistaken for a remote conflict.
+        An origin absent from the snapshot remains unobserved, not cleared.
+        """
+        base = flatten(observed)
+        _, previous, _ = self.state(row)
+        for key, value in (previous or {}).items():
+            if key.startswith("l:") and json.loads(key[2:])[0] not in observed["origins"]:
+                base[key] = value
+        if len(base) > MAX_ITEMS:
+            raise BrowserStateError("Browser observation baseline exceeds its 4096 item limit")
+        aad = row["tenant"] + ":" + row["owner"] + ":" + row["id"]
+        with self.db:
+            self.db.execute(
+                "UPDATE browser_peers SET payload=?,pending=0,status='syncing' WHERE desktop=?",
+                (self.seal(base, aad), row["id"]),
+            )
+
     def status(self, ident, status):
         with self.db:
             self.db.execute(

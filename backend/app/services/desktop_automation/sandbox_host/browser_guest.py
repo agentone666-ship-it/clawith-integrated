@@ -175,6 +175,10 @@ class Document:
                 await self.root.send("Target.closeTarget", {"targetId": self.target})
 
 
+class SnapshotChanged(RuntimeError):
+    """The pre-write comparison rejected this apply before any state was written."""
+
+
 class Browser:
     def __init__(self):
         self.context = None
@@ -285,7 +289,7 @@ class Browser:
         if current["connected"] is False:
             raise RuntimeError("Business browser closed during synchronization")
         if current["snapshot"] != expected:
-            raise RuntimeError("Business browser changed during synchronization; retry observation")
+            raise SnapshotChanged("Business browser changed during synchronization; retry observation")
         cookies = {ckey(c): c for c in expected["cookies"]}
         added, deleted, storage = [], [], {}
         for key, value in desired.items():

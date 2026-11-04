@@ -15,7 +15,7 @@ import uuid
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import uvicorn
-from browser_guest import Browser
+from browser_guest import Browser, SnapshotChanged
 from business_browser import BusinessBrowser
 
 browser=Browser()
@@ -418,7 +418,7 @@ app=FastAPI(lifespan=lifespan)
 @app.get('/health')
 async def health():
     return {'ready':bool(driver.tools) and driver.proc.returncode is None,
-        'browser_sync_protocol':23,'browser_navigation_stage':driver.navigation_stage,'business_browser_stage':business_browser.stage,'browser_connected':browser.connected,'recording_protocol':2,'recording_input_backend':'win32_send_input','driver':'0.37.0','platform':os.name,'model_calls':0,'tools':sorted(driver.tools)}
+        'browser_sync_protocol':24,'browser_navigation_stage':driver.navigation_stage,'business_browser_stage':business_browser.stage,'browser_connected':browser.connected,'recording_protocol':2,'recording_input_backend':'win32_send_input','driver':'0.37.0','platform':os.name,'model_calls':0,'tools':sorted(driver.tools)}
 
 @app.post('/browser/close')
 async def browser_close(req:Request):
@@ -483,6 +483,8 @@ async def browser_apply(req:Request):
     try:
         async with asyncio.timeout(10):
             async with browser.lock:return await browser.apply(body['state'],body['expected'])
+    except SnapshotChanged:
+        return JSONResponse({'code':'snapshot_changed','applied':False},status_code=409)
     except (RuntimeError,TimeoutError,KeyError) as exc:
         return JSONResponse({'error':str(exc)[:200] or type(exc).__name__},status_code=409)
 

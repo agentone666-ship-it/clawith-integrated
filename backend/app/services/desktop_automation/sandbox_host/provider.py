@@ -530,7 +530,7 @@ if ($LASTEXITCODE -ne 0) {{throw 'Interactive shell initialization did not launc
                 with httpx.Client(trust_env=False, timeout=httpx.Timeout(45, connect=2)) as client:
                     response = client.get("http://" + ip + ":8090/health", timeout=2)
                     if response.status_code == 200 and response.json().get("ready"):
-                        if response.json().get("browser_sync_protocol") != 23:
+                        if response.json().get("browser_sync_protocol") != 24:
                             if not upgraded:
                                 # Dispatch once even if the acknowledgement is lost.
                                 # Observe the replacement; never replay an unknown upgrade.

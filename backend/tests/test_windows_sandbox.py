@@ -382,7 +382,7 @@ def test_readiness_uses_normal_capture_budget_and_keeps_one_session_across_timeo
             pass
 
         def get(self, *args, **kwargs):
-            return httpx.Response(200, json={"ready": True, "browser_sync_protocol": 23})
+            return httpx.Response(200, json={"ready": True, "browser_sync_protocol": 24})
 
         def post(self, url, *, headers, json):
             args = json["params"]["arguments"]
@@ -565,7 +565,7 @@ async def test_old_ready_guest_upgrades_before_use_and_flushes_login_state_befor
     monkeypatch.setattr(m.provider, "ready", ready)
     m.browser_sync = SimpleNamespace(synchronize=synchronize)
     await m.ensure(ident)
-    assert events == ["guest_ready", "sync"] and m.row(ident)["browser_protocol"] == 23
+    assert events == ["guest_ready", "sync"] and m.row(ident)["browser_protocol"] == 24
     await m.ensure(ident)
     assert events == ["guest_ready", "sync"]
     await m.suspend(ident)
@@ -598,7 +598,7 @@ async def test_business_launch_synchronizes_before_receipt_fenced_navigation(man
     m.browser_sync = SimpleNamespace(
         synchronize=synchronize, vault=SimpleNamespace(view=lambda _: {"status": "synced"})
     )
-    m.db.execute("UPDATE desktops SET browser_protocol=23 WHERE id=?", (ident,))
+    m.db.execute("UPDATE desktops SET browser_protocol=24 WHERE id=?", (ident,))
     real_client = httpx.AsyncClient
 
     def respond(request):
@@ -681,7 +681,7 @@ def test_upgrade_gets_bounded_readiness_phase_without_reinstalling(tmp_path, mon
 
         def get(self, *args, **kwargs):
             return httpx.Response(
-                200, json={"ready": True, "browser_sync_protocol": 23 if upgrades and replacement_ready else 0}
+                200, json={"ready": True, "browser_sync_protocol": 24 if upgrades and replacement_ready else 0}
             )
 
         def post(self, url, *, headers, json):

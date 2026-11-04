@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 pytest.importorskip("playwright.async_api")
 from playwright.async_api import async_playwright
 
-from app.services.desktop_automation.sandbox_host.browser_guest import Browser
+from app.services.desktop_automation.sandbox_host.browser_guest import Browser, SnapshotChanged
 from app.services.desktop_automation.sandbox_host.browser_sync import BrowserSync
 from app.services.desktop_automation.sandbox_host.manager import Manager
 
@@ -66,6 +66,7 @@ def guest_app(browser, secret):
     namespace = {
         "app": app,
         "browser": browser,
+        "SnapshotChanged": SnapshotChanged,
         "secrets": secrets,
         "TOKEN": secret,
         "Request": Request,
@@ -207,6 +208,8 @@ async def test_real_http_only_login_refresh_logout_cross_account_and_restart(tmp
         assert await visit(a, "/private") == {"cookie": "sid=v1", "token": "token-v1"}
         # The browser accepted an apply, but the host did not receive its receipt.
         # Recovery reconciles the pending canonical state without publishing a false logout.
+        await visit(a, "/rotate")
+        await synced(0)
         original_request = sync.request
 
         async def lost_receipt(row, path, payload=None):
@@ -221,7 +224,57 @@ async def test_real_http_only_login_refresh_logout_cross_account_and_restart(tmp
         assert sync.vault.state(rows[1])[2]
         monkeypatch.setattr(sync, "request", original_request)
         await synced(1)
-        assert await visit(b, "/private") == {"cookie": "sid=v1", "token": "token-v1"}
+        assert await visit(b, "/private") == {"cookie": "sid=v2", "token": "token-v2"}
+        # A source-only snapshot needs no write, even if the user logs out
+        # immediately after that snapshot was captured.
+        captured = False
+        writes = 0
+
+        async def logout_after_snapshot(row, path, payload=None):
+            nonlocal captured, writes
+            result = await original_request(row, path, payload)
+            if row["id"] == rows[0]["id"]:
+                if path == "snapshot" and not captured:
+                    captured = True
+                    await visit(a, "/logout")
+                elif path == "apply":
+                    writes += 1
+            return result
+
+        monkeypatch.setattr(sync, "request", logout_after_snapshot)
+        await sync.once(rows[0]["id"])
+        assert captured and writes == 0
+        monkeypatch.setattr(sync, "request", original_request)
+        await synced(0)
+        await synced(1)
+        assert await visit(b, "/private") == {"cookie": "", "token": None}
+        await visit(a, "/login")
+        await synced(0)
+        await synced(1)
+        page = await b.context.new_page()
+        await page.goto(site + "/private")
+        await page.evaluate("localStorage.setItem('independent_remote_key','remote-value')")
+        await synced(1)  # Force an actual remote write to A on its next cycle.
+        # A user logout can race the host's snapshot-to-apply interval. A proven
+        # pre-write rejection must not become an unknown apply that restores login.
+        raced = False
+
+        async def logout_before_apply(row, path, payload=None):
+            nonlocal raced
+            if path == "apply" and row["id"] == rows[0]["id"] and not raced:
+                raced = True
+                await visit(a, "/logout")
+            return await original_request(row, path, payload)
+
+        monkeypatch.setattr(sync, "request", logout_before_apply)
+        await sync.once(rows[0]["id"])
+        assert raced
+        assert not sync.vault.state(rows[0])[2], "Known pre-write rejection must release only its pending apply"
+        monkeypatch.setattr(sync, "request", original_request)
+        await synced(0)
+        await synced(1)
+        assert await visit(a, "/private") == {"cookie": "", "token": None}
+        assert await visit(b, "/private") == {"cookie": "", "token": None}
         empty = {"cookies": [], "origins": {}}
         async with client_type(transport=guests["guest-0"], base_url="http://guest-0") as client:
             assert (await client.get("/browser/snapshot")).status_code == 401
@@ -240,6 +293,8 @@ async def test_real_http_only_login_refresh_logout_cross_account_and_restart(tmp
             "cross_account_isolation": True,
             "real_browser_restart": True,
             "lost_receipt_reconciled": True,
+            "concurrent_logout_before_apply": True,
+            "source_only_observation_without_writes": True,
         }
         output = os.getenv("CLAWITH_TEST_PROOF")
         if output:

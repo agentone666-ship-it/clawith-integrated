@@ -12,6 +12,10 @@ from cryptography.exceptions import InvalidTag
 from .browser_state import MAX_BYTES, BrowserStateError, BrowserStates, flatten
 
 
+class BrowserObservationChanged(RuntimeError):
+    """The guest explicitly proved that this apply performed no writes."""
+
+
 class BrowserSync:
     def __init__(self, manager, key_path):
         self.manager = manager
@@ -29,13 +33,23 @@ class BrowserSync:
                 json=payload,
             ) as response,
         ):
-            response.raise_for_status()
             raw = bytearray()
             async for chunk in response.aiter_bytes():
                 raw.extend(chunk)
                 if len(raw) > MAX_BYTES + 65536:
                     raise BrowserStateError("Browser response exceeds its synchronization bound")
-            return json.loads(raw)
+            result = json.loads(raw)
+            if (
+                path == "apply"
+                and response.status_code == 409
+                and isinstance(result, dict)
+                and set(result) == {"code", "applied"}
+                and result["code"] == "snapshot_changed"
+                and result["applied"] is False
+            ):
+                raise BrowserObservationChanged
+            response.raise_for_status()
+            return result
 
     async def once(self, ident):
         lifecycle = self.manager.locks.get(ident)
@@ -64,11 +78,18 @@ class BrowserSync:
                 if not isinstance(epoch, str) or not re.fullmatch("[a-f0-9]{64}", epoch):
                     raise BrowserStateError("Business browser identity is unavailable")
                 snapshot = result["snapshot"]
-                flatten(snapshot)
+                observed = flatten(snapshot)
                 desired = self.vault.prepare(row, snapshot, epoch)
-                applied = await self.request(row, "apply", {"state": desired, "expected": snapshot})
-                if applied != {"ok": True}:
-                    raise BrowserStateError("Browser did not acknowledge synchronization")
+                # A source-only update needs no browser write. In particular, a
+                # concurrent logout must not turn a no-op into pending restoration.
+                if any(observed.get(key) != value for key, value in desired.items()):
+                    try:
+                        applied = await self.request(row, "apply", {"state": desired, "expected": snapshot})
+                    except BrowserObservationChanged:
+                        self.vault.reject_apply(row, snapshot)
+                        return  # The next cycle observes again; no browser input is replayed.
+                    if applied != {"ok": True}:
+                        raise BrowserStateError("Browser did not acknowledge synchronization")
                 self.vault.acknowledge(row, desired, self.manager.clock())
             except (httpx.HTTPError, BrowserStateError, ValueError, KeyError, InvalidTag, TimeoutError):
                 # Credentials and guest response bodies are deliberately excluded.
