@@ -1296,13 +1296,48 @@ the server acceptance artifact is
 `artifacts/account-login-sync-20261102/windows-proof.json`. The main Clawith
 Runtime/backend container is not restarted by this private-host rollout.
 
-Current deployment status: the private sandbox host and frontend are installed
-on the development server, with the main Runtime container unchanged. Focused
-local checks pass79 tests, Ruff and scoped Pyright. Windows acceptance is still
-pending: the first Windows Playwright API startup timed out, and protocol20 now
-starts it lazily to protect ordinary desktop availability. Guest dependencies
-were installed from official pinned wheels with SHA256 readback on the host;
-public-network installation was too slow for the first readiness window. A
-bounded server-owned test batch continues independently of the Mac/SSH session;
-it releases its leases, saves managed VMs and removes temporary fixture firewall
-rules in its finalizer. Deployment is not proof of cross-Agent Windows acceptance.
+Current live deployment has the private host and frontend installed with the
+main Runtime container unchanged. Protocol22 reached actual Windows Edge launch,
+but `launch_persistent_context` timed out; cross-Agent Windows acceptance remains
+pending. Independent SDK initialization/exit succeeded. The attempted extra Edge
+de-elevation flag did not resolve the launch and is removed. Do not infer a
+privilege fix from the diagnostic probes: their ordinary/restricted-token process
+comparison did not establish a working browser. During the probe, the4GiB guest
+reported89percent memory load and410MiB available; the host had about22GiB
+available. Expanding the existing desktop requires normal shutdown, since its
+current machine definition has no memory hotplug configuration. The user confirmed
+there is no unsaved Windows work and authorized normal restart. Normal shutdown
+succeeded and both the registry and hypervisor now read2 vCPUs/8192MiB. The
+Windows cold boot and browser acceptance are still running; allocation readback
+is not browser acceptance.
+
+Protocol23 source is installed in the private host; guest readiness and live
+acceptance remain separate from that deployment. Its lifecycle fixes follow. A guest release that
+never acquired native input closes only that manual task's label and leaves
+another task's session untouched. An owned release clears the owner only after a
+confirmed native success; failures retain ownership and remain retryable.
+The host release HTTP budget is45seconds, covering the guest's40second native
+operation. QGA process launch/status use explicit30second command deadlines rather
+than virsh's default5seconds. Guest upgrades dispatch at most once per readiness
+attempt, including when their acknowledgement is lost, and then observe actual
+replacement readiness. They never automatically repeat an uncertain upgrade.
+
+Desktop resource specification is persisted per desktop. Schema migration seeds
+existing rows with their original2 vCPUs/4096MiB; newly created desktops receive
+4 vCPUs/8192MiB. Startup verifies actual hypervisor allocation against the registry.
+Offline operator maintenance uses `Manager.configure_resources`: authorize the
+account, reject active leases, require a normally shut-down owned domain without
+managed-save RAM, preserve disk/TPM/NVRAM/MAC identity, verify hypervisor readback,
+then update the registry and terminal compute state. Saved RAM must be restored
+before normal shutdown; it must never be discarded to make a resize work.
+The same Windows account, password, browser profile and encrypted host account
+state are retained. Memory expansion is a capacity correction to test, not proof
+that the browser failure is resolved.
+
+Local checks pass89 focused tests plus scoped Ruff/Pyright. They cover the
+release ownership boundary, truthful native release,
+legacy allocation migration, cold resource maintenance and identity preservation,
+explicit QGA deadlines, and unknown-upgrade acknowledgement handling in addition
+to the existing storage/receipt suite. Live Windows acceptance remains separately
+recorded in `artifacts/account-login-sync-20261102/windows-proof.json` only when
+the entire three-desktop business-site receipt batch succeeds.

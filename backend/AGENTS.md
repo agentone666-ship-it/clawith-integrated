@@ -254,3 +254,18 @@ URL navigation waits for verified account synchronization and retains the origin
 live-task receipt; background synchronization must never dispatch a Run URL.
 Preserve the existing interactive controller privileges. Windows shortcuts use
 the private local broker route without exposing profile or account selectors.
+
+Sandbox allocation is a per-desktop registry specification, not a hard-coded UI
+label. Older rows retain2 vCPUs/4096MiB; new desktops default to4 vCPUs/8192MiB.
+The provider checks actual hypervisor allocation before starting the desktop.
+`Manager.configure_resources` is an offline operator entry point: authorize the
+account, exclude active leases, require normal shutdown and no managed-save RAM,
+change only the owned domain allocation, verify readback, then register the spec.
+Never discard saved RAM to resize. Disk, NVRAM, TPM, network and account identity
+remain owned by the same desktop. Resource maintenance requires saved user work.
+
+A release for a task that never held native input is an idempotent no-op in the
+guest; it cannot inspect/end a different task's session. Confirmed native release
+is required before clearing an owned session. The host release deadline covers
+the guest's40-second native deadline. An unacknowledged guest upgrade is observed
+once per initialization attempt and is never automatically dispatched again.

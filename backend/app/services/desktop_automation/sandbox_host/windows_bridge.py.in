@@ -307,6 +307,16 @@ class Driver:
         if manual and (runtime is not None or not re.fullmatch('record_[a-f0-9]{32}',sid)):
             raise ValueError('Physical recording input requires an authorized manual recording; no action was dispatched')
         async with self.lock:
+            if action=='release':
+                # A task that never acquired native input can release its host
+                # lease without inspecting or changing another task's session.
+                if self.owner==sid:
+                    ended=await self.request('tools/call',{'name':'end_session','arguments':{'session':sid}})
+                    if not isinstance(ended.get('result'),dict) or ended['result'].get('isError'):
+                        raise RuntimeError('Native desktop release remains unconfirmed')
+                    self.owner=None;self.owner_context=None
+                if runtime is None:closed.touch()
+                return {'content':[{'type':'text','text':'Desktop session released; existing application state remains.'}]}
             if self.owner and self.owner!=sid:
                 expired=time.monotonic()>=self.expires
                 finished=(runtime is not None and self.owner_context is not None
@@ -323,12 +333,6 @@ class Driver:
             if self.owner and self.owner!=sid and time.monotonic()<self.expires:
                 remaining=max(1,int(self.expires-time.monotonic()))
                 raise ValueError(f'Desktop is in use by another active task. Do not invent a new session or force release it. Retry after that task finishes (lease remaining {remaining}s); no action was dispatched.')
-            if action=='release':
-                if self.owner==sid:
-                    await self.request('tools/call',{'name':'end_session','arguments':{'session':sid}})
-                    self.owner=None;self.owner_context=None
-                    if runtime is None:closed.touch()
-                return {'content':[{'type':'text','text':'Desktop session released; existing application state remains.'}]}
             if action not in self.tools: raise ValueError('Action is not exposed; use help')
             ident=args.get('request_id')
             write=action not in READS
@@ -357,11 +361,12 @@ class Driver:
             if receipt:
                 receipt.write_text(json.dumps({'fingerprint':fingerprint,'status':'dispatched'}),encoding='utf-8');receipt.chmod(0o600)
             started=time.monotonic()
+            managed_browser=(action=='launch_app' and str(params.get('path','')).replace('\\','/').rsplit('/',1)[-1].lower()=='msedge.exe')
             try:
                 if runtime is None and re.fullmatch('record_[a-f0-9]{32}',sid) and action in {'get_desktop_state','list_windows'}:
                     result=recording_desktop() if action=='get_desktop_state' else recording_windows()
                     response={'result':result}
-                elif action=='launch_app' and str(params.get('path','')).replace('\\','/').rsplit('/',1)[-1].lower()=='msedge.exe':
+                elif managed_browser:
                     result=await business_browser.prepare(params.get('additional_arguments',[]))
                     response={'result':result}
                 elif manual:
@@ -373,7 +378,7 @@ class Driver:
                 if not isinstance(result,dict):
                     raise RuntimeError('Driver returned invalid result: '+str(response.get('error',{}))[:400])
             except (TimeoutError,RuntimeError) as exc:
-                result={'isError':True,'content':[{'type':'text','text':(str(exc) if action=='launch_app' and 'Business browser preparation failed at' in str(exc) else f'Unknown action outcome ({type(exc).__name__}); inspect desktop before retrying. No automatic replay.')}]}
+                result={'isError':True,'content':[{'type':'text','text':('Business browser did not become controllable. Inspect the cloud desktop before a new attempt; no automatic replay.' if managed_browser else f'Unknown action outcome ({type(exc).__name__}); inspect desktop before retrying. No automatic replay.')}]}
             if action in READS and not result.get('isError'):
                 result.setdefault('structuredContent',{})['recording_input_backend']='win32_send_input'
                 result['structuredContent']['recording_protocol']=2
@@ -413,7 +418,7 @@ app=FastAPI(lifespan=lifespan)
 @app.get('/health')
 async def health():
     return {'ready':bool(driver.tools) and driver.proc.returncode is None,
-        'browser_sync_protocol':20,'browser_navigation_stage':driver.navigation_stage,'business_browser_stage':business_browser.stage,'browser_connected':browser.connected,'recording_protocol':2,'recording_input_backend':'win32_send_input','driver':'0.37.0','platform':os.name,'model_calls':0,'tools':sorted(driver.tools)}
+        'browser_sync_protocol':23,'browser_navigation_stage':driver.navigation_stage,'business_browser_stage':business_browser.stage,'browser_connected':browser.connected,'recording_protocol':2,'recording_input_backend':'win32_send_input','driver':'0.37.0','platform':os.name,'model_calls':0,'tools':sorted(driver.tools)}
 
 @app.post('/browser/close')
 async def browser_close(req:Request):

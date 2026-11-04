@@ -108,7 +108,7 @@ class Libvirt:
             )
             return mac, address
 
-    def provision(self, ident: str) -> None:
+    def provision(self, ident: str, *, vcpus: int, memory_mib: int) -> None:
         folder = self.root / "instances" / uuid.UUID(ident).hex
         folder.mkdir(parents=True, exist_ok=True, mode=0o700)
         account = pwd.getpwnam("qemu")
@@ -124,8 +124,8 @@ class Libvirt:
         domain = ET.Element("domain", type="kvm")
         ET.SubElement(domain, "name").text = self.name(ident)
         ET.SubElement(domain, "uuid").text = ident
-        ET.SubElement(domain, "memory", unit="MiB").text = "4096"
-        ET.SubElement(domain, "vcpu").text = "2"
+        ET.SubElement(domain, "memory", unit="MiB").text = str(memory_mib)
+        ET.SubElement(domain, "vcpu").text = str(vcpus)
         osnode = ET.SubElement(domain, "os")
         ET.SubElement(osnode, "type", arch="x86_64", machine="pc-q35-rhel9.6.0").text = "hvm"
         ET.SubElement(osnode, "loader", readonly="yes", type="pflash").text = os.environ.get(
@@ -175,8 +175,67 @@ class Libvirt:
         xml.write_text(ET.tostring(domain, encoding="unicode"))
         self.command(["virsh", "-c", "qemu:///system", "define", str(xml)])
 
-    def start(self, ident: str) -> None:
-        self.provision(ident)
+    def resources(self, ident: str) -> dict[str, int]:
+        domain = ET.fromstring(self.virsh(ident, "dumpxml"))
+        memory = domain.find("currentMemory")
+        if memory is None:
+            memory = domain.find("memory")
+        cpu = domain.find("vcpu")
+        if memory is None or cpu is None:
+            raise ProviderError("Windows allocation could not be verified")
+        units = {"KiB": 1 / 1024, "MiB": 1, "GiB": 1024}
+        if memory.get("unit", "KiB") not in units:
+            raise ProviderError("Unknown Windows memory allocation unit")
+        return {
+            "vcpus": int(cpu.get("current") or cpu.text or "0"),
+            "memory_mib": int(int(memory.text or "0") * units[memory.get("unit", "KiB")]),
+        }
+
+    def set_resources(self, ident: str, *, vcpus: int, memory_mib: int) -> None:
+        """Operator maintenance only, after graceful shutdown and saved-RAM restore."""
+        if vcpus not in {2, 4, 8} or memory_mib not in {4096, 8192, 16384}:
+            raise ProviderError("Unsupported Windows allocation")
+        if self.state(ident) != "shut off":
+            raise ProviderError("Windows must shut down normally before changing its allocation")
+        saved = self.command(["virsh", "-c", "qemu:///system", "list", "--all", "--with-managed-save", "--uuid"])
+        if str(uuid.UUID(ident)) in saved.splitlines():
+            raise ProviderError(
+                "Restore saved Windows memory before shutting down; its saved state must not be discarded"
+            )
+        domain = ET.fromstring(self.virsh(ident, "dumpxml", "--inactive"))
+        folder = self.root / "instances" / uuid.UUID(ident).hex
+        disk = domain.find("./devices/disk[@device='disk']/source")
+        if (
+            domain.findtext("uuid") != str(uuid.UUID(ident))
+            or disk is None
+            or disk.get("file") != str(folder / "system.qcow2")
+        ):
+            raise ProviderError("Windows resource ownership does not match its persistent disk")
+        if domain.find("./cpu/topology") is not None:
+            raise ProviderError("Custom Windows CPU topology requires separate maintenance")
+        memory, cpu = domain.find("memory"), domain.find("vcpu")
+        if memory is None or cpu is None:
+            raise ProviderError("Windows allocation is incomplete")
+        memory.set("unit", "MiB")
+        memory.text = str(memory_mib)
+        current = domain.find("currentMemory")
+        if current is not None:
+            current.set("unit", "MiB")
+            current.text = str(memory_mib)
+        cpu.attrib.pop("current", None)
+        cpu.text = str(vcpus)
+        xml = folder / "domain.xml"
+        xml.write_text(ET.tostring(domain, encoding="unicode"))
+        self.command(["virsh", "-c", "qemu:///system", "define", str(xml)])
+        if self.resources(ident) != {"vcpus": vcpus, "memory_mib": memory_mib}:
+            raise ProviderError("Windows allocation readback did not match the maintenance request")
+
+    def start(self, ident: str, *, vcpus: int, memory_mib: int) -> None:
+        self.provision(ident, vcpus=vcpus, memory_mib=memory_mib)
+        if self.resources(ident) != {"vcpus": vcpus, "memory_mib": memory_mib}:
+            raise ProviderError(
+                "Windows allocation differs from its registered configuration; safe maintenance is required"
+            )
         if self.state(ident) == "shut off":
             # Cold compressed snapshots can take minutes on a contended host.
             # Keep the desktop in restoring state while libvirt finishes.
@@ -214,6 +273,8 @@ class Libvirt:
             self.virsh(
                 ident,
                 "qemu-agent-command",
+                "--timeout",
+                "30",
                 json.dumps(
                     {
                         "execute": "guest-exec",
@@ -224,6 +285,7 @@ class Libvirt:
                         },
                     }
                 ),
+                timeout=35,
             )
         )
         pid = result["return"]["pid"]
@@ -233,12 +295,15 @@ class Libvirt:
                 self.virsh(
                     ident,
                     "qemu-agent-command",
+                    "--timeout",
+                    "30",
                     json.dumps(
                         {
                             "execute": "guest-exec-status",
                             "arguments": {"pid": pid},
                         }
                     ),
+                    timeout=35,
                 )
             )["return"]
             if status.get("exited"):
@@ -465,10 +530,12 @@ if ($LASTEXITCODE -ne 0) {{throw 'Interactive shell initialization did not launc
                 with httpx.Client(trust_env=False, timeout=httpx.Timeout(45, connect=2)) as client:
                     response = client.get("http://" + ip + ":8090/health", timeout=2)
                     if response.status_code == 200 and response.json().get("ready"):
-                        if response.json().get("browser_sync_protocol") != 20:
+                        if response.json().get("browser_sync_protocol") != 23:
                             if not upgraded:
-                                self.upgrade_browser(ident, token)
+                                # Dispatch once even if the acknowledgement is lost.
+                                # Observe the replacement; never replay an unknown upgrade.
                                 upgraded = True
+                                self.upgrade_browser(ident, token)
                                 # Asset installation consumes the old startup phase;
                                 # prove the replacement controller within a fresh,
                                 # bounded phase, without reinstalling in the poll loop.

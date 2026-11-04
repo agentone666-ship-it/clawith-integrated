@@ -6,7 +6,12 @@ profile or arbitrary debugging endpoint is attached to this browser owner.
 
 import asyncio
 import hashlib
+import json
+import os
+import re
+import traceback
 import uuid
+from pathlib import Path
 
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
@@ -70,6 +75,7 @@ class BusinessBrowser:
         try:
             async with asyncio.timeout(110), self.lock:
                 if not self.api:
+                    self.stage = "starting_api"
                     await self.start()
                 if not self.browser.connected:
                     self.stage = "launching"
@@ -84,6 +90,7 @@ class BusinessBrowser:
                         timeout=90000,
                     )
                     self.identity = hashlib.sha256(uuid.uuid4().bytes).hexdigest()
+                    self.stage = "binding"
                     await self.browser.bind(self.context, self.identity)
                 self.stage = "ready"
                 return {
@@ -91,7 +98,24 @@ class BusinessBrowser:
                     "structuredContent": {"business_browser_prepared": True},
                 }
         except (PlaywrightError, TimeoutError) as exc:
+            phase = self.stage
             self.stage = "error"
+            # Preparation launches only the fixed binary/profile and about:blank;
+            # business URLs and authentication state never enter this diagnostic.
+            if os.name == "nt":
+                frames = traceback.extract_tb((exc.__cause__ or exc).__traceback__)
+                diagnostic = {
+                    "phase": phase,
+                    "exception": type(exc).__name__,
+                    "message": re.sub(r"(?:https?|wss?)://[^\s<>]+", "<endpoint>", str(exc).split("Call log:", 1)[0])[
+                        :300
+                    ],
+                    "launch_log": re.sub(
+                        r"(?:https?|wss?)://[^\s<>]+", "<endpoint>", str(exc).split("Call log:", 1)[-1]
+                    )[:6000],
+                    "frames": [{"file": Path(f.filename).name, "function": f.name, "line": f.lineno} for f in frames],
+                }
+                Path("C:/Clawith/private/browser-launch-error.txt").write_text(json.dumps(diagnostic), encoding="utf-8")
             raise RuntimeError(
                 "Business browser did not become ready; inspect the cloud desktop before retrying"
             ) from exc

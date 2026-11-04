@@ -330,3 +330,68 @@ async def test_cancelled_navigation_releases_task_lock_and_fences_the_receipt(br
     browser_lock.release()
     with pytest.raises(ValueError, match="unknown"):
         await driver.navigate_business("record_authorized", "browser_fixture")
+
+
+async def test_release_without_native_input_never_touches_another_tasks_session(bridge):
+    driver, state = bridge
+    calls = []
+
+    async def request(*args):
+        calls.append(args)
+        raise AssertionError("Foreign native session must not be touched")
+
+    driver.request = request
+    result = await driver.call({"action": "release", "params": {}, "session_id": "record_no_input"})
+    assert not result.get("isError") and not calls
+    assert driver.owner == "record_authorized"
+    assert (state / "closed" / "record_no_input").exists()
+
+
+async def test_release_requires_confirmed_native_success_and_remains_retryable(bridge):
+    driver, state = bridge
+
+    async def refused(*args):
+        return {"result": {"isError": True}}
+
+    driver.request = refused
+    with pytest.raises(RuntimeError, match="unconfirmed"):
+        await driver.call({"action": "release", "params": {}, "session_id": "record_authorized"})
+    assert driver.owner == "record_authorized"
+    assert not (state / "closed" / "record_authorized").exists()
+    calls = []
+
+    async def confirmed(method, params):
+        calls.append(params)
+        return {"result": {}}
+
+    driver.request = confirmed
+    await driver.call({"action": "release", "params": {}, "session_id": "record_authorized"})
+    await driver.call({"action": "release", "params": {}, "session_id": "record_authorized"})
+    assert driver.owner is None and (state / "closed" / "record_authorized").exists()
+    assert [p["name"] for p in calls] == ["end_session"]
+
+
+async def test_managed_browser_failure_is_safe_actionable_and_not_replayed(bridge):
+    from types import SimpleNamespace
+
+    driver, state = bridge
+    driver.tools["launch_app"] = {"inputSchema": {"properties": {}}}
+    calls = []
+
+    async def failed_prepare(urls):
+        calls.append(urls)
+        raise RuntimeError("private-provider-detail")
+
+    driver.call.__globals__["business_browser"] = SimpleNamespace(prepare=failed_prepare)
+    args = {
+        "action": "launch_app",
+        "params": {"path": "msedge.exe"},
+        "session_id": "record_authorized",
+        "request_id": "launch_fixture",
+    }
+    first = await driver.call(args)
+    second = await driver.call(args)
+    assert first == second and first["isError"] and calls == [[]]
+    assert "Business browser" in first["content"][0]["text"]
+    assert "private-provider-detail" not in json.dumps(first)
+    assert (state / "calls" / "record_authorized-launch_fixture.json").exists()

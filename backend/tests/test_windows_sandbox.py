@@ -23,7 +23,7 @@ class Provider:
     def state(self, ident):
         return "running" if ident in self.running else "shut off"
 
-    def start(self, ident):
+    def start(self, ident, *, vcpus, memory_mib):
         self.running.add(ident)
         (self.root / ident).touch()
 
@@ -382,7 +382,7 @@ def test_readiness_uses_normal_capture_budget_and_keeps_one_session_across_timeo
             pass
 
         def get(self, *args, **kwargs):
-            return httpx.Response(200, json={"ready": True, "browser_sync_protocol": 20})
+            return httpx.Response(200, json={"ready": True, "browser_sync_protocol": 23})
 
         def post(self, url, *, headers, json):
             args = json["params"]["arguments"]
@@ -565,7 +565,7 @@ async def test_old_ready_guest_upgrades_before_use_and_flushes_login_state_befor
     monkeypatch.setattr(m.provider, "ready", ready)
     m.browser_sync = SimpleNamespace(synchronize=synchronize)
     await m.ensure(ident)
-    assert events == ["guest_ready", "sync"] and m.row(ident)["browser_protocol"] == 20
+    assert events == ["guest_ready", "sync"] and m.row(ident)["browser_protocol"] == 23
     await m.ensure(ident)
     assert events == ["guest_ready", "sync"]
     await m.suspend(ident)
@@ -598,7 +598,7 @@ async def test_business_launch_synchronizes_before_receipt_fenced_navigation(man
     m.browser_sync = SimpleNamespace(
         synchronize=synchronize, vault=SimpleNamespace(view=lambda _: {"status": "synced"})
     )
-    m.db.execute("UPDATE desktops SET browser_protocol=20 WHERE id=?", (ident,))
+    m.db.execute("UPDATE desktops SET browser_protocol=23 WHERE id=?", (ident,))
     real_client = httpx.AsyncClient
 
     def respond(request):
@@ -681,7 +681,7 @@ def test_upgrade_gets_bounded_readiness_phase_without_reinstalling(tmp_path, mon
 
         def get(self, *args, **kwargs):
             return httpx.Response(
-                200, json={"ready": True, "browser_sync_protocol": 20 if upgrades and replacement_ready else 0}
+                200, json={"ready": True, "browser_sync_protocol": 23 if upgrades and replacement_ready else 0}
             )
 
         def post(self, url, *, headers, json):
@@ -699,3 +699,165 @@ def test_upgrade_gets_bounded_readiness_phase_without_reinstalling(tmp_path, mon
             p.ready(str(uuid.uuid4()), "test-token", "test-password", True)
         assert clock[0] <= 362
     assert len(upgrades) == 1
+
+
+def test_new_desktop_allocations_and_legacy_registry_migration_preserve_identity(manager):
+    m, _ = manager
+    ident = m.create(scope())
+    before = dict(m.row(ident))
+    assert m.view(m.row(ident))["vcpus"] == 4
+    assert m.view(m.row(ident))["memory_mib"] == 8192
+    m.db.execute("ALTER TABLE desktops DROP COLUMN vcpus")
+    m.db.execute("ALTER TABLE desktops DROP COLUMN memory_mib")
+    m.db.commit()
+    reopened = Manager(m.provider.root / "state.sqlite", m.provider)
+    try:
+        after = reopened.row(ident)
+        assert after["vcpus"] == 2 and after["memory_mib"] == 4096
+        assert all(after[k] == before[k] for k in ["id", "tenant", "owner", "agent", "password", "token"])
+    finally:
+        reopened.db.close()
+
+
+@pytest.mark.parametrize("running,saved", [(True, False), (False, True)])
+def test_allocation_change_refuses_live_or_saved_memory_without_discarding_it(tmp_path, monkeypatch, running, saved):
+    from app.services.desktop_automation.sandbox_host.provider import Libvirt
+
+    ident = str(uuid.uuid4())
+    p = Libvirt(tmp_path, tmp_path / "template")
+    monkeypatch.setattr(p, "state", lambda _: "running" if running else "shut off")
+    calls = []
+
+    def command(args):
+        calls.append(args)
+        assert args[3] == "list", "Must not mutate the VM or its saved memory"
+        return ident if saved else ""
+
+    monkeypatch.setattr(p, "command", command)
+    with pytest.raises(ProviderError, match="normally|saved"):
+        p.set_resources(ident, vcpus=4, memory_mib=8192)
+    assert not calls if running else len(calls) == 1
+
+
+def test_cold_allocation_change_keeps_disk_tpm_nvram_and_network_identity(tmp_path, monkeypatch):
+    from xml.etree import ElementTree as ET
+
+    from app.services.desktop_automation.sandbox_host.provider import Libvirt
+
+    ident = str(uuid.uuid4())
+    folder = tmp_path / "instances" / uuid.UUID(ident).hex
+    folder.mkdir(parents=True)
+    definition = f'''<domain><name>clawith-ws-{uuid.UUID(ident).hex}</name><uuid>{ident}</uuid>
+<memory unit="KiB">4194304</memory><currentMemory unit="KiB">4194304</currentMemory><vcpu>2</vcpu>
+<os><nvram>existing.nvram</nvram></os><devices><disk device="disk"><source file="{folder / "system.qcow2"}"/></disk>
+<tpm model="tpm-crb"><backend type="emulator" version="2.0"/></tpm><interface><mac address="52:54:00:00:00:01"/></interface></devices></domain>'''
+    original = ET.fromstring(definition)
+    p = Libvirt(tmp_path, tmp_path / "template")
+    monkeypatch.setattr(p, "state", lambda _: "shut off")
+    monkeypatch.setattr(p, "virsh", lambda *a, **kw: definition)
+    operations = []
+
+    def command(args):
+        nonlocal definition
+        operations.append(args[3])
+        if args[3] == "list":
+            return ""
+        assert args[3] == "define"
+        definition = Path(args[-1]).read_text()
+        return "defined"
+
+    from pathlib import Path
+
+    monkeypatch.setattr(p, "command", command)
+    p.set_resources(ident, vcpus=4, memory_mib=8192)
+    changed = ET.fromstring(definition)
+    assert p.resources(ident) == {"vcpus": 4, "memory_mib": 8192}
+    assert operations == ["list", "define"]
+    for path in ["uuid", "devices/disk", "devices/tpm", "devices/interface", "os/nvram"]:
+        assert ET.tostring(changed.find(path)) == ET.tostring(original.find(path))
+
+
+def test_guest_process_creation_uses_explicit_agent_deadline(tmp_path, monkeypatch):
+    import base64
+
+    from app.services.desktop_automation.sandbox_host.provider import Libvirt
+
+    p = Libvirt(tmp_path, tmp_path / "template")
+    calls = []
+
+    def virsh(ident, operation, *args, timeout):
+        calls.append(args)
+        assert operation == "qemu-agent-command"
+        assert args[:2] == ("--timeout", "30") and timeout > 30
+        request = json.loads(args[2])
+        if request["execute"] == "guest-exec":
+            return json.dumps({"return": {"pid": 42}})
+        return json.dumps(
+            {"return": {"exited": True, "exitcode": 0, "out-data": base64.b64encode(b"confirmed").decode()}}
+        )
+
+    monkeypatch.setattr(p, "virsh", virsh)
+    assert p.powershell(str(uuid.uuid4()), "Write-Output 'confirmed'") == "confirmed"
+    assert len(calls) == 2
+
+
+def test_resource_registration_is_owner_scoped_and_follows_verified_hypervisor_change(manager, monkeypatch):
+    m, _ = manager
+    identity = scope()
+    ident = m.create(identity)
+    changes = []
+
+    def configure(desktop, **resources):
+        assert desktop == ident
+        assert m.row(ident)["memory_mib"] == 8192
+        changes.append(resources)
+
+    monkeypatch.setattr(m.provider, "set_resources", configure, raising=False)
+    with pytest.raises(SandboxError):
+        m.configure_resources(ident, identity["tenant_id"], str(uuid.uuid4()), vcpus=2, memory_mib=4096)
+    assert not changes
+    m.lease(ident, "record_fixture", "x" * 40)
+    with pytest.raises(SandboxError, match="active task"):
+        m.configure_resources(ident, identity["tenant_id"], identity["owner_id"], vcpus=2, memory_mib=4096)
+    assert not changes
+    m.db.execute("UPDATE leases SET state='released'")
+    m.db.commit()
+    m.configure_resources(ident, identity["tenant_id"], identity["owner_id"], vcpus=2, memory_mib=4096)
+    assert changes == [{"vcpus": 2, "memory_mib": 4096}]
+    assert m.row(ident)["memory_mib"] == 4096 and m.row(ident)["state"] == "stopped"
+
+
+def test_unknown_upgrade_acknowledgement_is_observed_without_replaying_the_upgrade(tmp_path, monkeypatch):
+    from app.services.desktop_automation.sandbox_host.provider import Libvirt
+
+    p = Libvirt(tmp_path, tmp_path / "template")
+    clock = [0.0]
+    calls = []
+    monkeypatch.setattr("time.monotonic", lambda: clock[0])
+    monkeypatch.setattr("time.sleep", lambda n: clock.__setitem__(0, clock[0] + n))
+    monkeypatch.setattr(p, "ip", lambda _: "10.253.0.10")
+
+    def upgrade(*args):
+        calls.append(args)
+        clock[0] += 1
+        raise ProviderError("Guest setup acknowledgement timed out")
+
+    monkeypatch.setattr(p, "upgrade_browser", upgrade)
+
+    class HTTP:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def get(self, *args, **kwargs):
+            return httpx.Response(200, json={"ready": True, "browser_sync_protocol": 0})
+
+    monkeypatch.setattr(httpx, "Client", HTTP)
+    with pytest.raises(ProviderError, match="initialization bound"):
+        p.ready(str(uuid.uuid4()), "private-token", "private-password", True)
+    assert len(calls) == 1 and clock[0] <= 182

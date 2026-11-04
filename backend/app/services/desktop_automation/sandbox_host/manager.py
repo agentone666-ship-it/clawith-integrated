@@ -49,6 +49,11 @@ class Manager:
         if "browser_protocol" not in {column[1] for column in self.db.execute("PRAGMA table_info(desktops)")}:
             self.db.execute("ALTER TABLE desktops ADD COLUMN browser_protocol INTEGER NOT NULL DEFAULT 0")
             self.db.commit()
+        columns = {column[1] for column in self.db.execute("PRAGMA table_info(desktops)")}
+        for name, default in (("vcpus", 2), ("memory_mib", 4096)):
+            if name not in columns:
+                self.db.execute(f"ALTER TABLE desktops ADD COLUMN {name} INTEGER NOT NULL DEFAULT {default}")
+        self.db.commit()
         self.provider = provider
         self.idle_seconds, self.lease_seconds, self.max_running = idle_seconds, lease_seconds, max_running
         self.locks: dict[str, asyncio.Lock] = {}
@@ -75,7 +80,7 @@ class Manager:
                 raise SandboxError("Your account has reached its 10 desktop quota; contact an administrator", 429)
             stamp = self.clock()
             self.db.execute(
-                "INSERT INTO desktops(id,tenant,owner,agent,state,token,password,created,idle_since) VALUES(?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO desktops(id,tenant,owner,agent,state,token,password,created,idle_since,vcpus,memory_mib) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     ident,
                     tenant,
@@ -86,6 +91,8 @@ class Manager:
                     secrets.token_urlsafe(30),
                     stamp,
                     stamp,
+                    4,
+                    8192,
                 ),
             )
             self.db.commit()
@@ -97,6 +104,18 @@ class Manager:
             raise SandboxError("Cloud desktop not found", 404)
         return row
 
+    def configure_resources(self, ident: str, tenant: str, owner: str, *, vcpus: int, memory_mib: int) -> None:
+        """Offline operator only: host service stopped; Windows shut down normally."""
+        self.authorize(ident, tenant, owner)
+        if self.db.execute("SELECT 1 FROM leases WHERE desktop=? AND state='active' LIMIT 1", (ident,)).fetchone():
+            raise SandboxError("An active task owns this desktop; maintenance is not admitted")
+        self.provider.set_resources(ident, vcpus=vcpus, memory_mib=memory_mib)
+        self.db.execute(
+            "UPDATE desktops SET vcpus=?,memory_mib=?,state='stopped',compute_held=0,last_error='' WHERE id=?",
+            (vcpus, memory_mib, ident),
+        )
+        self.db.commit()
+
     def view(self, row) -> dict:
         lease = self.db.execute(
             "SELECT 1 FROM leases WHERE desktop=? AND state='active' LIMIT 1", (row["id"],)
@@ -106,8 +125,8 @@ class Manager:
             "agent_id": None if row["agent"] == "studio" else row["agent"],
             "state": row["state"],
             "busy": bool(lease),
-            "vcpus": 2,
-            "memory_mib": 4096,
+            "vcpus": row["vcpus"],
+            "memory_mib": row["memory_mib"],
             "persistent": True,
             "compute_held": bool(row["compute_held"]),
             "idle_seconds": max(0, int(self.clock() - row["idle_since"])) if not lease else 0,
@@ -150,7 +169,7 @@ class Manager:
         row = self.row(ident)
         if (
             row["state"] == "ready"
-            and (self.browser_sync is None or row["browser_protocol"] == 20)
+            and (self.browser_sync is None or row["browser_protocol"] == 23)
             and await asyncio.to_thread(self.provider.state, ident) == "running"
         ):
             return
@@ -171,7 +190,7 @@ class Manager:
             )
             self.db.commit()
         try:
-            await asyncio.to_thread(self.provider.start, ident)
+            await asyncio.to_thread(self.provider.start, ident, vcpus=row["vcpus"], memory_mib=row["memory_mib"])
             ip = await asyncio.to_thread(
                 self.provider.ready, ident, row["token"], row["password"], bool(row["personalized"])
             )
@@ -180,7 +199,7 @@ class Manager:
             self.db.commit()
             raise SandboxError(str(exc), 503) from exc
         self.db.execute(
-            "UPDATE desktops SET state='ready',personalized=1,browser_protocol=20,ip=?,idle_since=? WHERE id=?",
+            "UPDATE desktops SET state='ready',personalized=1,browser_protocol=23,ip=?,idle_since=? WHERE id=?",
             (ip, self.clock(), ident),
         )
         self.db.commit()
@@ -315,7 +334,7 @@ class Manager:
                 raise SandboxError("Desktop lease expired; release cannot reclaim a newer task")
             row = self.row(ident)
             if row["state"] == "ready":
-                async with httpx.AsyncClient(trust_env=False, timeout=15) as client:
+                async with httpx.AsyncClient(trust_env=False, timeout=45) as client:
                     response = await client.post(
                         "http://" + row["ip"] + ":8090/mcp",
                         json=body,
