@@ -243,6 +243,16 @@ class AgentCreate(BaseModel):
     max_tokens_per_month: int | None = None
     # Skills to copy into agent workspace
     skill_ids: list[uuid.UUID] = []
+    recruitment_id: uuid.UUID | None = None
+    recruitment_revision: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def recruitment_reference_is_complete(self):
+        if self.recruitment_id is not None and self.employee_blueprint_id is not None:
+            raise ValueError("Choose one creation source: recruitment or employee blueprint")
+        if (self.recruitment_id is None) != (self.recruitment_revision is None):
+            raise ValueError("recruitment_id and recruitment_revision must be provided together")
+        return self
 
     @model_validator(mode="after")
     def validate_blueprint_reference(self):

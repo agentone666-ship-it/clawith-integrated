@@ -3,7 +3,7 @@ import { useAuthStore } from './stores';
 import { Suspense, lazy, useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { authApi } from './services/api';
-import { EmployeeStudioEntry } from './pages/employee-studio/EmployeeStudioEntry';
+import { RecruitmentEntry } from './pages/recruitment/RecruitmentEntry';
 
 const Login = lazy(() => import('./pages/Login'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
@@ -16,6 +16,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Plaza = lazy(() => import('./pages/Plaza'));
 const AgentDetail = lazy(() => import('./pages/AgentDetail'));
 const AgentCreate = lazy(() => import('./pages/AgentCreate'));
+const RecruitmentPage = lazy(() => import('./pages/recruitment/RecruitmentPage').then(module => ({ default: module.RecruitmentPage })));
 const Messages = lazy(() => import('./pages/Messages'));
 const EnterpriseSettings = lazy(() => import('./pages/EnterpriseSettings'));
 const InvitationCodes = lazy(() => import('./pages/InvitationCodes'));
@@ -286,11 +287,14 @@ export default function App() {
                 <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
                 <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
                     <Route index element={<Navigate to="/dashboard" replace />} />
-                    <Route path="dashboard" element={<><EmployeeStudioEntry /><Dashboard /></>} />
+                    <Route path="dashboard" element={<><RecruitmentEntry /><Dashboard /></>} />
                     <Route path="employee-studio" element={<EmployeeStudio />} />
                     <Route path="automations" element={<AutomationStudio />} />
                     <Route path="plaza" element={<Plaza />} />
-                    <Route path="agents/new" element={<AgentCreate />} />
+                    <Route path="agents/new" element={<Navigate to="/recruitment" replace />} />
+                    <Route path="agents/configure" element={<AgentCreate />} />
+                    <Route path="recruitment" element={<RecruitmentPage />} />
+                    <Route path="recruitment/:dossierId" element={<RecruitmentPage />} />
                     <Route path="agents/:id" element={<Navigate to="chat" replace />} />
                     <Route path="agents/:id/chat" element={<AgentDetail />} />
                     <Route path="agents/:id/directory" element={<AgentDetail />} />

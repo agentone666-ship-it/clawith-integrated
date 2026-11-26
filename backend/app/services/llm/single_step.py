@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-import uuid
 
 from app.services.token_tracker import TokenUsage, record_token_usage
 
@@ -129,11 +129,14 @@ async def complete_llm_once(
     supports_vision: bool = False,
     max_output_tokens: int | None = None,
     on_visible_delta: VisibleDeltaCallback | None = None,
+    stream_response: bool = False,
 ) -> LLMCompletionStep:
     """Call one pinned model exactly once and normalize its tool proposals.
 
     This function never executes tools, retries, appends repair prompts, or
     advances a lifecycle. Those decisions belong to the durable Graph.
+    Streaming can also aggregate a structured answer without publishing deltas;
+    the caller remains responsible for validating the complete response.
     """
     api_messages = _convert_messages_for_vision(messages, supports_vision)
     client = create_llm_client(
@@ -158,7 +161,7 @@ async def complete_llm_once(
         else None
     )
     try:
-        if delta_gate is None:
+        if delta_gate is None and not stream_response:
             response = await client.complete(
                 messages=api_messages,
                 tools=tools or None,
@@ -171,7 +174,7 @@ async def complete_llm_once(
                 tools=tools or None,
                 temperature=model.temperature,
                 max_tokens=max_tokens,
-                on_chunk=delta_gate.push,
+                on_chunk=delta_gate.push if delta_gate is not None else None,
             )
     finally:
         await client.close()

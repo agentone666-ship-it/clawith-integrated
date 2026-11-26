@@ -112,3 +112,8 @@ account. Show the host-owned browser sync projection without exposing secrets or
 adding per-Agent credential configuration. Saved desktops sync on restore; do
 not present an old saved snapshot as currently synchronized. Keep instance/file
 isolation distinct from browser login sharing.
+
+The HR recruitment UI lives in `src/pages/recruitment/` and uses the shared
+request wrapper in `src/services/api.ts`. Dossiers and interview execution are
+Backend-owned; the UI polls native Run projections and never invents completion
+or pass status. See `docs/agent-notes/recruitment.md` for its contract.

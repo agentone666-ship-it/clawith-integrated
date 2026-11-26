@@ -1,11 +1,12 @@
 """One-call LLM provider boundary tests for the durable Runtime."""
 
 import asyncio
-from types import SimpleNamespace
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
+from app.services.llm import single_step
 from app.services.llm.client import (
     AnthropicClient,
     GeminiClient,
@@ -15,9 +16,7 @@ from app.services.llm.client import (
     OpenAIResponsesClient,
     extract_embedded_reasoning,
 )
-from app.services.llm import single_step
 from app.services.llm.utils import get_tool_params
-
 
 _TINY_PNG_DATA_URL = (
     "data:image/png;base64,"
@@ -103,6 +102,37 @@ def _patch_client(monkeypatch, client: _Client) -> None:
     monkeypatch.setattr(single_step, "create_llm_client", lambda **kwargs: client)
     monkeypatch.setattr(single_step, "get_model_api_key", lambda model: "secret")
     monkeypatch.setattr(single_step, "get_max_tokens", lambda *args: 1024)
+
+
+@pytest.mark.asyncio
+async def test_structured_stream_is_aggregated_without_publishing_partial_json(monkeypatch):
+    client = _Client(LLMResponse(content='{"reply":"ready","resume":null}', finish_reason="stop"))
+    _patch_client(monkeypatch, client)
+
+    async def unexpected_complete(**kwargs):
+        pytest.fail("Structured streaming must use the provider stream")
+
+    client.complete = unexpected_complete
+    result = await single_step.complete_llm_once(
+        _model(), [LLMMessage(role="user", content="Prepare a resume")], stream_response=True,
+    )
+    assert result.content == '{"reply":"ready","resume":null}'
+    assert result.visible_streamed is False
+    assert len(client.calls) == 1 and client.calls[0]["on_chunk"] is None
+    assert client.calls[0]["max_tokens"] == 1024
+    assert client.closed is True
+
+
+@pytest.mark.asyncio
+async def test_structured_stream_failure_closes_client_without_retry(monkeypatch):
+    client = _Client(TimeoutError("provider idle timeout"))
+    _patch_client(monkeypatch, client)
+    with pytest.raises(TimeoutError, match="provider idle timeout"):
+        await single_step.complete_llm_once(
+            _model(), [LLMMessage(role="user", content="Prepare a resume")], stream_response=True,
+        )
+    assert len(client.calls) == 1
+    assert client.closed is True
 
 
 @pytest.mark.asyncio

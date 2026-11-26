@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { IconPlus, IconSearch, IconWorld, IconX } from '@tabler/icons-react';
 import { agentApi } from '../services/api';
-import PostHireSettingsModal from './PostHireSettingsModal';
 import CustomAgentModal from './CustomAgentModal';
 import { translateTemplate } from '../i18n/templateTranslations';
-import customAgentBackground from '../assets/talent-market/custom-agent-botanical.png';
 
 interface Template {
     id: string;
@@ -45,10 +44,8 @@ type TabId = 'popular' | 'software-development' | 'marketing' | 'office' | 'trad
 
 export default function TalentMarketModal({ open, onClose }: Props) {
     const { t, i18n } = useTranslation();
+    const navigate = useNavigate();
     const isChinese = i18n.language.startsWith('zh');
-    // Chosen template → hands off to PostHireSettingsModal. The market modal
-    // stays mounted behind so the user can cancel and pick someone else.
-    const [pendingTemplate, setPendingTemplate] = useState<Template | null>(null);
     const [customModalOpen, setCustomModalOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<TabId>('popular');
     const [searchQuery, setSearchQuery] = useState('');
@@ -70,11 +67,11 @@ export default function TalentMarketModal({ open, onClose }: Props) {
     useEffect(() => {
         if (!open) return;
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && !pendingTemplate && !customModalOpen) onClose();
+            if (e.key === 'Escape' && !customModalOpen) onClose();
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [open, onClose, pendingTemplate, customModalOpen]);
+    }, [open, onClose, customModalOpen]);
 
     if (!open) return null;
 
@@ -249,7 +246,7 @@ export default function TalentMarketModal({ open, onClose }: Props) {
                     )}
                     {!isLoading && (
                         <CustomCard
-                            onClick={() => setCustomModalOpen(true)}
+                            onClick={() => { onClose(); navigate('/recruitment'); }}
                         />
                     )}
                     {!isLoading && visibleTemplates.length === 0 && (
@@ -265,7 +262,11 @@ export default function TalentMarketModal({ open, onClose }: Props) {
                             tpl={tpl}
                             hiring={false}
                             isChinese={isChinese}
-                            onHire={() => setPendingTemplate(tpl)}
+                            onHire={() => {
+                                const localized = translateTemplate(tpl, isChinese);
+                                onClose();
+                                navigate(`/recruitment?role=${encodeURIComponent(`${localized.name}。${localized.description}`)}`);
+                            }}
                         />
                     ))}
                 </div>
@@ -275,16 +276,13 @@ export default function TalentMarketModal({ open, onClose }: Props) {
                     padding: '12px 28px 16px', textAlign: 'center', fontSize: '12px',
                     color: 'var(--text-tertiary)', borderTop: '1px solid var(--border-subtle)',
                 }}>
-                    {t('talentMarket.footer', isChinese ? '点击聘用·可随时在设置中调整' : 'Hire now · adjust anything in settings later')}
+                    <span>{isChinese ? '聊需求 → 确认简历 → 面试 → 录用' : 'Describe → Review resume → Interview → Hire'}</span>
+                    <button className="btn btn-ghost" style={{ marginLeft: 12, fontSize: 11 }} onClick={() => setCustomModalOpen(true)}>
+                        {isChinese ? '高级创建 / 连接外部 Agent' : 'Advanced setup / external agent'}
+                    </button>
                 </div>
             </div>
 
-            <PostHireSettingsModal
-                template={pendingTemplate}
-                open={!!pendingTemplate}
-                onClose={() => setPendingTemplate(null)}
-                onDone={() => { setPendingTemplate(null); onClose(); }}
-            />
             <CustomAgentModal
                 open={customModalOpen}
                 initialMode="native"
@@ -350,14 +348,14 @@ function TemplateCard({ tpl, hiring, isChinese, onHire }: {
                 disabled={hiring}
                 style={{ marginTop: '16px', width: '100%' }}
             >
-                {hiring ? t('talentMarket.hiring', isChinese ? '聘用中…' : 'Hiring...') : t('talentMarket.hire', isChinese ? '聘用' : 'Hire')}
+                {hiring ? t('talentMarket.hiring', isChinese ? '聘用中…' : 'Hiring...') : (isChinese ? '请 HR 按此岗位招聘' : 'Recruit for this role')}
             </button>
         </div>
     );
 }
 
 function CustomCard({ onClick }: { onClick: () => void }) {
-    const { t, i18n } = useTranslation();
+    const { i18n } = useTranslation();
     const isChinese = i18n.language.startsWith('zh');
     return (
         <div
@@ -366,32 +364,18 @@ function CustomCard({ onClick }: { onClick: () => void }) {
                 border: '1.5px dashed var(--border-subtle)', borderRadius: '10px',
                 padding: '18px', display: 'flex', flexDirection: 'column',
                 cursor: 'pointer',
-                background: 'linear-gradient(135deg, rgba(255,255,255,0.97) 0%, rgba(255,255,255,0.92) 54%, rgba(249,246,238,0.82) 100%)',
+                background: 'var(--bg-secondary)',
                 transition: 'border-color 120ms, background 120ms',
                 position: 'relative',
                 overflow: 'hidden',
             }}
             onMouseEnter={(e) => {
-                (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--accent)';
+                (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-strong)';
             }}
             onMouseLeave={(e) => {
                 (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-subtle)';
             }}
         >
-            <div
-                aria-hidden="true"
-                style={{
-                    position: 'absolute',
-                    inset: 0,
-                    backgroundImage: `linear-gradient(90deg, rgba(255,255,255,0.97) 0%, rgba(255,255,255,0.84) 48%, rgba(255,255,255,0.18) 100%), url(${customAgentBackground})`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right -44px center',
-                    backgroundSize: '260px auto',
-                    filter: 'grayscale(18%) saturate(76%) sepia(8%)',
-                    opacity: 0.68,
-                    pointerEvents: 'none',
-                }}
-            />
             <div style={{
                 width: '40px', height: '40px', borderRadius: '8px',
                 background: 'var(--bg-secondary)',
@@ -402,7 +386,7 @@ function CustomCard({ onClick }: { onClick: () => void }) {
                 <IconPlus size={20} stroke={1.5} />
             </div>
             <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '2px', position: 'relative', zIndex: 1 }}>
-                {t('talentMarket.customTitle', isChinese ? '自建 Agent' : 'Build custom')}
+                {isChinese ? '让 HR 帮你招聘' : 'Recruit with HR'}
             </div>
             <div style={{
                 fontSize: '10px', fontWeight: 500, letterSpacing: '0.06em',
@@ -410,16 +394,14 @@ function CustomCard({ onClick }: { onClick: () => void }) {
                 marginBottom: '12px',
                 position: 'relative', zIndex: 1,
             }}>
-                {t('talentMarket.customCategory', 'Custom')}
+                {isChinese ? '定制数字员工' : 'CUSTOM RECRUITMENT'}
             </div>
             <p style={{
                 margin: 0, flex: 1, fontSize: '12.5px',
                 color: 'var(--text-secondary)', lineHeight: 1.6,
                 position: 'relative', zIndex: 1,
             }}>
-                {t('talentMarket.customDescription', isChinese
-                    ? '创建本地 Native Agent，按你的需求定义身份、权限和工具。'
-                    : 'Create a native agent, then define its identity, permissions, and tools.')}
+                {isChinese ? '说说想找什么人，HR 来梳理岗位、选配技能和工具，先面试，满意再录用。' : 'Describe the job. HR assembles a candidate with matching skills and tools. Interview before hiring.'}
             </p>
             <div style={{
                 marginTop: '14px',
@@ -434,9 +416,7 @@ function CustomCard({ onClick }: { onClick: () => void }) {
             }}>
                 <IconWorld size={13} stroke={1.5} style={{ flexShrink: 0 }} />
                 <span>
-                    {t('talentMarket.externalAgentHint', isChinese
-                        ? '支持 Native、OpenClaw 等外部 Agent'
-                        : 'Supports native, OpenClaw, and external agents')}
+                    {isChinese ? '聊需求 · 看简历 · 现场试做' : 'Describe · Review · Try real work'}
                 </span>
             </div>
             <button
@@ -447,7 +427,7 @@ function CustomCard({ onClick }: { onClick: () => void }) {
                 }}
                 style={{ marginTop: '16px', width: '100%', position: 'relative', zIndex: 1 }}
             >
-                {t('talentMarket.customStart', isChinese ? '开始' : 'Start')}
+                {isChinese ? '和 HR 聊聊' : 'Talk to HR'}
             </button>
         </div>
     );

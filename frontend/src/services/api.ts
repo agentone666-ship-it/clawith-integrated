@@ -8,7 +8,7 @@ export type { ApiErrorContext, AppErrorContext, ErrorSource } from './apiError';
 
 const API_BASE = '/api';
 
-async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+export async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     const token = localStorage.getItem('token');
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',

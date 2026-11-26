@@ -233,6 +233,7 @@ async def _background_agent_setup(
     skill_ids: list[uuid.UUID],
     template_skill_folder_names: list[str],
     template_mcp_servers: list[str],
+    include_default_skills: bool = True,
 ) -> None:
     """Run all creation tasks asynchronously with small, short-lived transactions."""
     # 1. Initialize agent file system from template
@@ -268,8 +269,10 @@ async def _background_agent_setup(
     skill_files_to_write = []
     try:
         async with async_session() as db:
-            default_result = await db.execute(select(Skill).where(Skill.is_default))
-            default_ids = {s.id for s in default_result.scalars().all()}
+            default_ids = set()
+            if include_default_skills:
+                default_result = await db.execute(select(Skill).where(Skill.is_default))
+                default_ids = {s.id for s in default_result.scalars().all()}
 
             template_skill_ids = set()
             if template_skill_folder_names:
@@ -434,6 +437,27 @@ async def create_agent(
             },
         })
 
+    recruitment_row = None
+    recruitment_resume = None
+    if data.recruitment_id is not None:
+        from app.services.recruitment import prepare_candidate, compile_personality as compile_recruitment_personality
+        assert data.recruitment_revision is not None
+        recruitment_row, recruitment_resume = await prepare_candidate(
+            db, current_user, data.recruitment_id, data.recruitment_revision,
+            target_tenant_id=target_tenant_id,
+        )
+        data = data.model_copy(update={
+            "name": recruitment_resume.name,
+            "role_description": recruitment_resume.role,
+            "agent_type": "native",
+            "personality": compile_recruitment_personality(recruitment_resume),
+            "boundaries": "\n".join(recruitment_resume.boundaries),
+            "skill_ids": list({i for c in recruitment_resume.capabilities if c.selected for i in c.skill_ids}),
+            "template_id": None,
+            "permission_scope_type": "user", "permission_scope_ids": [], "permission_access_level": "use",
+            "autonomy_policy": None,
+        })
+
     # Get default limits from target tenant
     max_llm_calls = 1000
     default_max_triggers = 20
@@ -483,6 +507,8 @@ async def create_agent(
     )
     if blueprint is not None and effective_primary_model_id is None:
         raise HTTPException(400, "创建岗位员工需要配置可用模型")
+    if recruitment_row is not None and effective_primary_model_id is None:
+        raise HTTPException(400, "组装候选员工需要配置可用模型")
     expires_at = datetime.now(timezone.utc) + timedelta(hours=ttl_hours) if ttl_hours and ttl_hours > 0 else None
 
     agent = Agent(
@@ -514,6 +540,10 @@ async def create_agent(
 
     if blueprint is not None and specification is not None:
         bind_created_agent(db, blueprint, specification, agent.id)
+    if recruitment_row is not None:
+        from app.services.recruitment import bind_candidate
+        assert recruitment_resume is not None
+        await bind_candidate(db, recruitment_row, recruitment_resume, agent)
 
     # Auto-create Participant identity for the new agent
     db.add(
@@ -596,6 +626,7 @@ async def create_agent(
         skill_ids=list(data.skill_ids or []),
         template_skill_folder_names=folder_names,
         template_mcp_servers=template_mcp_servers,
+        include_default_skills=recruitment_row is None,
     )
 
     return out

@@ -107,7 +107,8 @@ async def test_agent_sdk_and_human_download_share_actual_markdown(fixture, monke
         assert spec == status["sdk"]
         assert spec.startswith("# 桌面自动化 Agent 工作规范")
         assert "不要把选 Tool" in spec and "必须调用 `create" in spec
-        assert "最多三轮" in spec and "成功试运行不能发布" in spec
-        assert "只写草稿" in spec and "不伪造 Run 身份" in spec
+        assert "最多三轮" in spec and "缺少测试或测试失败时不得要求用户发布" in spec
+        assert "`publish` 只返回待用户确认的回执，不创建版本或 Tool" in spec
+        assert "不得代替用户点击或绕过确认" in spec and "不伪造 Run 身份" in spec
         assert len(spec.encode()) < 16384
         assert not service.driver.inputs

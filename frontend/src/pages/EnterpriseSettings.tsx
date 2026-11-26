@@ -453,11 +453,22 @@ export default function EnterpriseSettings() {
                     </div>
                 </div>
 
-                <div className="tabs">
+                <div className="tabs" role="tablist" aria-label={t('nav.enterprise')}>
                     {(['info', 'llm', 'tools', 'skills', 'okr', 'invites', 'quotas', 'users', 'org', 'approvals', 'audit'] as const).map(tab => (
                         <div
                             key={tab}
+                            data-tour-target={tab === 'llm' ? 'model-pool' : undefined}
+                            role="tab"
+                            tabIndex={0}
+                            aria-selected={activeTab === tab}
                             className={`tab ${activeTab === tab ? 'active' : ''}`}
+                            onKeyDown={event => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault();
+                                    window.location.hash = tab;
+                                    setActiveTab(tab);
+                                }
+                            }}
                             onClick={() => {
                                 // Update URL hash so each tab has a bookmarkable address
                                 window.location.hash = tab;

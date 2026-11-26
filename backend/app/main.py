@@ -380,6 +380,7 @@ app.add_middleware(
 # Register API routes
 from app.api.auth import router as auth_router
 from app.api.agents import router as agents_router
+from app.api.recruitment import router as recruitment_router
 from app.api.tasks import router as tasks_router
 from app.api.files import router as files_router
 from app.api.websocket import router as ws_router
@@ -429,6 +430,7 @@ from app.api.employee_studio import router as employee_studio_router
 
 app.include_router(auth_router, prefix=settings.API_PREFIX)
 app.include_router(agents_router, prefix=settings.API_PREFIX)
+app.include_router(recruitment_router, prefix=settings.API_PREFIX)
 app.include_router(tasks_router, prefix=settings.API_PREFIX)
 app.include_router(files_router, prefix=settings.API_PREFIX)
 app.include_router(feishu_router, prefix=settings.API_PREFIX)
