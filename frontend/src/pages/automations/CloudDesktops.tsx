@@ -104,8 +104,9 @@ export function CloudDesktops({ onRecordingCreated }: Props) {
         <div>
           <h2>我的云电脑</h2>
           <p className="auto-muted">
-            每位员工使用独立的 Windows
-            环境，归属当前账号。用云电脑里的 Business Browser 登录业务系统，支持的网页登录态会自动同步给本账号的其他员工；窗口、文件和软件各自独立。空闲时自动休眠。
+            每位员工使用独立的 Windows 环境，归属当前账号。用云电脑里的 Business
+            Browser
+            登录业务系统，支持的网页登录态会自动同步给本账号的其他员工；窗口、文件和软件各自独立。空闲时自动休眠。
           </p>
         </div>
       </div>
@@ -131,11 +132,19 @@ export function CloudDesktops({ onRecordingCreated }: Props) {
                 <div>
                   <h3>{row.agent_name}</h3>
                   <p className="auto-muted">
-                    {row.busy
-                      ? "任务使用中"
-                      : labels[row.state] || "状态待确认"}{" "}
+                    {["starting", "restoring", "saving"].includes(row.state)
+                      ? labels[row.state]
+                      : row.busy
+                        ? "任务使用中"
+                        : labels[row.state] || "状态待确认"}{" "}
                     · {row.vcpus} 核 / {row.memory_mib / 1024} GB · 持久环境
                   </p>
+                  {["starting", "restoring"].includes(row.state) && (
+                    <p className="auto-muted" role="status">
+                      正在准备 Windows
+                      桌面，首次启动需要数分钟。就绪后即可录制，请保持页面打开。
+                    </p>
+                  )}
                   {row.browser_sync && (
                     <p className="auto-muted" role="status">
                       {row.state === "saved" || row.state === "stopped"

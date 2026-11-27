@@ -1419,3 +1419,27 @@ readback in `manual-windows-proof.json` confirms all registered VMs saved,
 zero active leases/held compute, removed fixture access rules, matching deployed
 source and the original main Runtime container. Only the synthetic tutorial
 login was cleared; no dedicated profile directory or shared account vault was reset.
+
+### Local desktop startup feedback (2026-11-26)
+
+Desktop inventory presents the host-owned starting/restoring/saving state before
+lease occupancy. While recording admission is pending, the recording surface
+explains that initial Windows preparation can take minutes and that recording
+starts after readiness. These labels do not establish readiness or change the
+existing bounded HTTP425 retry contract; native frame admission remains owned
+by the sandbox host. A successful list response alone does not verify recording.
+
+Live diagnosis of the newly allocated local-test desktop observed Windows OOBE
+clearing AutoAdminLogon after a transient successful bridge readiness check.
+The instance reached the login screen with no interactive user or bridge.
+After OOBEInProgress and SystemSetupInProgress were both zero, an operator
+restored this instance's existing encrypted autologon credential and rebooted
+only that desktop. No password was changed and no other desktop was modified.
+This is an instance repair, not a change to or validation of fresh provisioning.
+The local UI then displayed a real Windows desktop, recorded Ctrl+Escape and
+Escape with native receipts, and saved both steps in the dedicated
+`本地录制连通验收` draft at revision1. The user's pre-existing empty recording
+was saved before this separate acceptance recording. TypeScript and13 focused
+API-error/input-queue tests pass. New-desktop OOBE/readiness sequencing still
+requires a separate provider fix; these observations do not establish fleet-wide
+cold-start reliability.

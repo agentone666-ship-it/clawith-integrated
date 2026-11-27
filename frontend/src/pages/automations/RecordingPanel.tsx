@@ -281,12 +281,14 @@ export function RecordingPanel({
             disabled={busy}
           >
             ●{" "}
-            {(workflow.draft.format === "clawith.cua.v1"
-              ? workflow.draft.steps
-              : []
-            ).length
-              ? "重新录制"
-              : "开始录制"}
+            {transitioning
+              ? "正在准备云电脑…"
+              : (workflow.draft.format === "clawith.cua.v1"
+                    ? workflow.draft.steps
+                    : []
+                  ).length
+                ? "重新录制"
+                : "开始录制"}
           </button>
         ) : (
           <>
@@ -346,9 +348,17 @@ export function RecordingPanel({
         <div className="auto-desktop auto-desktop-empty">
           <span>▣</span>
           <strong>
-            {recording ? "正在连接独立桌面…" : "准备录制一个可复用的桌面流程"}
+            {recording
+              ? "正在连接独立桌面…"
+              : transitioning
+                ? "正在启动 Windows 云电脑…"
+                : "准备录制一个可复用的桌面流程"}
           </strong>
-          <p>开始录制后，桌面画面将在这里显示。</p>
+          <p>
+            {transitioning && !recording
+              ? "首次启动需要数分钟，请保持页面打开。桌面就绪后会自动进入录制。"
+              : "开始录制后，桌面画面将在这里显示。"}
+          </p>
         </div>
       )}
       {recording && (
